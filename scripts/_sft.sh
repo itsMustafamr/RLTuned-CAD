@@ -18,7 +18,8 @@ torchrun --standalone --nnodes=1 --nproc-per-node="$NGPUS" -m verl.trainer.sft_t
   data.train_batch_size=64 \
   data.micro_batch_size_per_gpu=1 \
   model.path="$BASE_MODEL" \
-  model.use_remove_padding=True \
+  model.use_remove_padding="$REMOVE_PADDING" \
+  +model.override_config.attn_implementation="$ATTN_IMPL" \
   model.enable_gradient_checkpointing=True \
   engine=fsdp \
   optim=fsdp \

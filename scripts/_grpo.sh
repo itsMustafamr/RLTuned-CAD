@@ -36,7 +36,8 @@ python -m verl.trainer.main_ppo \
   data.truncation=error \
   data.shuffle=False \
   actor_rollout_ref.model.path="$POLICY" \
-  actor_rollout_ref.model.use_remove_padding=True \
+  actor_rollout_ref.model.use_remove_padding="$REMOVE_PADDING" \
+  +actor_rollout_ref.model.override_config.attn_implementation="$ATTN_IMPL" \
   actor_rollout_ref.model.enable_gradient_checkpointing=True \
   actor_rollout_ref.actor.strategy=fsdp2 \
   actor_rollout_ref.actor.optim.lr="${LR:-1e-6}" \
