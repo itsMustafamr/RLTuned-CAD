@@ -1,0 +1,29 @@
+# --- data, checkpoints, big files: never commit Bhavika's data or model weights ---
+data/
+BRepVLM/
+BRepVLM.zip
+*.7z
+*.tar.gz
+*.zip
+*.pdf
+ckpt/
+checkpoints/
+runs/
+logs/
+*.parquet
+*.npz
+_to_delete/
+
+# results/ IS tracked (summary.md / summary.json / comparison.md are the evidence);
+# only the bulky per-sample dumps stay out
+results/*/predictions*.jsonl
+
+# --- python / tooling ---
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.DS_Store
+.env
+.claude/
+wandb/
