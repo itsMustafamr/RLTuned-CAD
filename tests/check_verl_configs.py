@@ -27,7 +27,7 @@ def overrides_from(script, marker, env):
 env = dict(DATA="/d", TRAIN="/d/sft_train.parquet", BATCH="64", RESP="8192", TOKGPU="20480", POLICY="/m", BASE_MODEL="/m",
            LR="1e-6", EPOCHS="2", SAVE="15", TEST="15", STEPS="null", N="8", REWARD_WORKERS="3", NCPUS="48", REPO="/r",
            CKPT="/c", EXP="x", SFT_EXP="s", STAGE="8k", NGPUS="8", LOGGER="[console,tensorboard]",
-           REMOVE_PADDING="False", ATTN_IMPL="sdpa")
+           REMOVE_PADDING="False", ATTN_IMPL="sdpa", DYNAMIC_BSZ="False")
 for script, marker, name in (("_sft.sh", "-m verl.trainer.sft_trainer", "sft_trainer_engine"),
                              ("_grpo.sh", "-m verl.trainer.main_ppo", "ppo_trainer")):
     ovs = overrides_from(script, marker, env)
@@ -40,3 +40,8 @@ for script, marker, name in (("_sft.sh", "-m verl.trainer.sft_trainer", "sft_tra
         assert cfg.actor_rollout_ref.rollout.n == 8 and cfg.data.shuffle is False
         assert cfg.ray_kwargs.ray_init.num_cpus == 48
         assert cfg.actor_rollout_ref.model.override_config.attn_implementation == "sdpa"
+        a = cfg.actor_rollout_ref   # without flash-attn: one sample per micro-batch, actor and rollout must agree
+        assert a.actor.use_dynamic_bsz is False and a.rollout.log_prob_use_dynamic_bsz is False and a.ref.log_prob_use_dynamic_bsz is False
+        assert a.actor.ppo_micro_batch_size_per_gpu == a.rollout.log_prob_micro_batch_size_per_gpu == a.ref.log_prob_micro_batch_size_per_gpu == 1
+    else:
+        assert cfg.data.use_dynamic_bsz is False and cfg.data.micro_batch_size_per_gpu == 1

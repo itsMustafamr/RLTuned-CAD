@@ -13,7 +13,7 @@ torchrun --standalone --nnodes=1 --nproc-per-node="$NGPUS" -m verl.trainer.sft_t
   data.max_length=16384 \
   data.truncation=right \
   data.pad_mode=no_padding \
-  data.use_dynamic_bsz=True \
+  data.use_dynamic_bsz="$DYNAMIC_BSZ" \
   data.max_token_len_per_gpu=32768 \
   data.train_batch_size=64 \
   data.micro_batch_size_per_gpu=1 \

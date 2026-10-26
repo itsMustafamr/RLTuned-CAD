@@ -26,11 +26,14 @@ export LOGGER=${LOGGER:-'["console","tensorboard"]'}
 export TENSORBOARD_DIR=${TENSORBOARD_DIR:-$REPO/runs/tensorboard}
 
 # flash-attn could not be installed from verl's lock (see scripts/setup_nova.sh); without it verl runs
-# the padded SDPA path: identical math, slower. The launchers pass these two overrides.
+# the padded SDPA path: identical math, slower. The launchers pass these overrides.
+# On the padded path every micro-batch is padded to its longest sample and verl materializes the full
+# (micro-batch x longest x 151,936-word vocab) logits, so token-budget micro-batches that mix short and
+# long samples need several times their real memory. DYNAMIC_BSZ=False: one sample per micro-batch, no padding.
 if python -c 'import flash_attn' 2>/dev/null; then
-  export REMOVE_PADDING=True ATTN_IMPL=flash_attention_2
+  export REMOVE_PADDING=True ATTN_IMPL=flash_attention_2 DYNAMIC_BSZ=True
 else
-  export REMOVE_PADDING=False ATTN_IMPL=sdpa
+  export REMOVE_PADDING=False ATTN_IMPL=sdpa DYNAMIC_BSZ=False
 fi
 
 NGPUS=$( (nvidia-smi -L 2>/dev/null || true) | wc -l)
@@ -45,4 +48,4 @@ latest_hf() {
   if [ -d "$d/actor/huggingface" ]; then echo "$d/actor/huggingface"; elif [ -d "$d/huggingface" ]; then echo "$d/huggingface"; fi
 }
 
-echo "[common] host=$(hostname) gpus=$NGPUS cpus=$NCPUS model=$BASE_MODEL sft_exp=$SFT_EXP attn=$ATTN_IMPL remove_padding=$REMOVE_PADDING"
+echo "[common] host=$(hostname) gpus=$NGPUS cpus=$NCPUS model=$BASE_MODEL sft_exp=$SFT_EXP attn=$ATTN_IMPL remove_padding=$REMOVE_PADDING dynamic_bsz=$DYNAMIC_BSZ"
