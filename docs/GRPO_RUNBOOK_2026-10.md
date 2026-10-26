@@ -1,4 +1,4 @@
-# RLTuned-CAD — first GRPO run on Nova (runbook, 2026-10)
+# RLTuned-CAD: first GRPO run on Nova (runbook, 2026-10)
 
 **Goal:** one honest "SFT only vs SFT + GRPO" comparison on chunk 9 with our stand-in compiler and
 reward, plus the evidence that every piece of the pipeline does what it claims. Qwen2.5-VL-3B is the
@@ -13,7 +13,7 @@ estimates from model size and token counts, not measurements; the first run meas
 
 ---
 
-## Stage 0 — environment (once, ~20-30 min, needs internet)
+## Stage 0: environment (once, ~20-30 min, needs internet)
 
 In the OnDemand desktop or on a login node, not in an sbatch job:
 
@@ -30,7 +30,7 @@ and `unpack_raw.sh` reports 4477 sequences / 5995 annotated models.
 If `uv sync` fails on a wheel download, re-run the script; it is idempotent. If Nova's default python is
 older than 3.10, uv downloads its own 3.12 (needs internet, which the desktop has).
 
-## Stage 1 — data prep and CPU checks (`run01_prep`, ~10 min on 32 cores)
+## Stage 1: data prep and CPU checks (`run01_prep`, ~10 min on 32 cores)
 
 ```bash
 sbatch scripts/run01_prep.sbatch
@@ -48,9 +48,9 @@ Gate (in the log):
 | preflight `[1]..[4]` | all OK; `[4]` must say "never undercounts" |
 | oracle `all` row | invalid_ratio 0.000, iou_mean 1.000 |
 
-`data/processed/reward_sanity.txt` and `results/oracle/summary.md` are meeting material.
+`data/processed/reward_sanity.txt` and `results/oracle/summary.md` are the evidence for this stage.
 
-## Stage 2 — stand-in SFT (`run02_sft_3b`, estimate 30-60 min on 8 A100 for 3B)
+## Stage 2: stand-in SFT (`run02_sft_3b`, estimate 30-60 min on 8 A100 for 3B)
 
 ```bash
 sbatch scripts/run02_sft_3b.sbatch            # or: bash scripts/submit_chain.sh train  (chains 2 -> 3 -> 4, and 5)
@@ -60,7 +60,7 @@ Gate: `val/loss` decreases across the 2 epochs; `latest_hf` prints
 `$CKPT/sft_qwen2.5-vl-3b-instruct_c9/global_step_<N>/huggingface`. If the dataset check stops the run with
 `input_ids mismatch`, resubmit with `data.ignore_input_ids_mismatch=True` appended.
 
-## Stage 3 — GRPO smoke test (`run03_grpo_smoke`, estimate 20-30 min)
+## Stage 3: GRPO smoke test (`run03_grpo_smoke`, estimate 20-30 min)
 
 6 steps, 8 prompts x 8 rollouts, 2k-token answers. Nothing here is a result.
 
@@ -68,7 +68,7 @@ Gate: 6 step lines; `reward_extra_info` contains `valid_solid`, `s_topo`, `timeo
 no Ray warning about actors waiting for CPUs; `$CKPT/grpo_smoke/global_step_6/actor/huggingface` exists.
 Note the seconds per step: the main run has ~8x more rollout tokens per step.
 
-## Stage 4 — GRPO 8k stage (`run04_grpo_8k`, 2 epochs ~90 steps; estimate 2-4 min per step for 3B)
+## Stage 4: GRPO 8k stage (`run04_grpo_8k`, 2 epochs ~90 steps; estimate 2-4 min per step for 3B)
 
 ```bash
 sbatch scripts/run04_grpo_8k.sbatch           # STEPS=30 sbatch ... for a fixed budget
@@ -76,12 +76,12 @@ sbatch scripts/run04_grpo_8k.sbatch           # STEPS=30 sbatch ... for a fixed 
 
 Watch `critic/score/mean` (the reward) and `reward_extra_info/valid_solid` in the log or TensorBoard
 (`runs/tensorboard`). Checkpoints and HF exports every 15 steps. Validation generations every 15 steps in
-`runs/grpo_8k/val_generations/` are the before/after examples for the meeting.
+`runs/grpo_8k/val_generations/` are the before/after examples.
 
 Gate: reward and valid_solid trend up over the first 30 steps; `timeout` stays ~0; response length does
 not collapse to the maximum (that would mean the policy learned to ramble; raise `KL` to 0.005).
 
-## Stage 5 and 6 — evaluation (`run05_eval_sft`, `run06_eval_grpo`, estimate 20-40 min each on 4 GPUs)
+## Stage 5 and 6: evaluation (`run05_eval_sft`, `run06_eval_grpo`, estimate 20-40 min each on 4 GPUs)
 
 ```bash
 sbatch scripts/run05_eval_sft.sbatch          # as soon as run02 is done

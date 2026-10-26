@@ -6,6 +6,9 @@ with OpenCascade, a verifiable geometric reward scores it, and GRPO updates the 
 
 ![pipeline](figures/pipeline_concept.png)
 
+*Concept figure. The example rollouts and the reward values drawn in it are illustrative, not measured;
+the measured values are in the tables below.*
+
 ## Headline results
 
 Held-out chunk-9 test split (255 shapes whose GT rebuilds), greedy decoding, scored by one scorer for
@@ -13,9 +16,9 @@ every row (`scripts/eval.py`). Filled in from `results/comparison.md` as runs fi
 
 | Model | IR (invalid ratio) | IoU 128^3 | IoU_best | CD x1e3 (median) | reward |
 |---|---|---|---|---|---|
-| oracle (GT sequence as the answer) | 0.000 | 1.000 | 1.000 | sampling floor ~0.07 | 1.000 |
-| SFT only (Qwen2.5-VL-3B, chunk 9) | run05 | | | | |
-| SFT + GRPO 8k stage | run06 | | | | |
+| oracle (GT sequence as the answer) | 0.000 | 1.000 | 1.000 | 0.067 (sampling floor) | 1.000 |
+| SFT only (Qwen2.5-VL-3B, chunk 9) | queued on Nova (run02, then run05) | | | | |
+| SFT + GRPO 8k stage | queued on Nova (run04, then run06) | | | | |
 
 ## How the RL stage works
 
@@ -42,38 +45,68 @@ every row (`scripts/eval.py`). Filled in from `results/comparison.md` as runs fi
 
 ## What is verified and what is not (yet)
 
-Reproduced on CPU from the code in this repo (chunk 9, 4,477 sequences):
+`run01_prep` reran every CPU check on Nova on 2026-10-26 (log: `logs/run01_prep_*.log`). The numbers in
+this section come from that log.
 
-* parser: every sequence parses with zero bad lines
-* stand-in compiler: **3,805 of 3,856** unique annotated GT sequences (98.7%) rebuild into valid closed
-  solids; volumes match the annotation numbers (median error 0.1%, DATA_REPORT.md)
-* reward: GT scores 1.000, every corruption scores lower in order of severity (table below)
-* eval path: with the GT sequence standing in for the model output, IoU 1.000, invalid ratio 0 (`--oracle`)
-* every verl override composes against verl v0.9.1's config tree (`tests/check_verl_configs.py`), and
-  the reward entry point survives verl's by-value transfer into a separate process
+Data (`scripts/prepare_data.py`, chunk 9):
 
-Not run yet (needs Nova GPUs): SFT, GRPO and vLLM generation. That is why run01 ends with a preflight
-and run03 is a 6-step GRPO smoke test before the real run.
+| Stage | Shapes |
+|---|---|
+| unique shapes (exact duplicates collapsed) | 3,956 |
+| with text annotations | 3,856 |
+| within the 15k-token limit | 3,736 |
+| ground truth rebuilds into a valid closed solid (stand-in compiler) | 3,686 of 3,736 |
+| split train / val / test | 3,470 / 116 / 270 |
+| SFT samples train / val (4 prompts per shape) | 13,452 / 452 |
+| RL prompts, 8k stage / 16k stage | 2,877 / 3,318 |
+| test shapes with a rebuildable ground truth (`scripts/eval.py`) | 255 |
 
-Reward sanity (`scripts/reward_sanity.py`, 80 random chunk-9 shapes, 66 ms per sample on one core):
+Annotation coverage, counted from the chunk-9 tarballs: 4,375 of 4,477 sequences have all three
+descriptions and 102 have none (79 simple, 23 complex); no sequence has only some of them. The 102 are
+dropped, since text-to-sequence training requires a text prompt.
 
-| Variant | Reward | Valid solid | IoU |
-|---|---|---|---|
-| ground truth | 1.000 | 1.00 | 1.000 |
-| vertices jittered ±2 steps | 0.974 | 0.97 | 0.958 |
-| jittered ±8 steps | 0.516 | 0.34 | 0.320 |
-| jittered ±32 steps | 0.506 | 0.36 | 0.323 |
-| jittered ±128 steps | 0.418 | 0.30 | 0.218 |
-| one face deleted (invalid, close) | 0.385 | 0.01 | 0.012 |
-| another model's GT | 0.321 | 1.00 | 0.078 |
-| a simple box instead | 0.320 | 1.00 | 0.015 |
-| edge order shuffled inside loops | 0.996 | 1.00 | 0.994 |
-| truncated / empty | 0.000 | 0.00 | 0.000 |
+Checks:
 
-A valid but wrong shape (0.32) does not beat a near miss (0.39), so the policy is not pushed toward
-"emit any valid box". Jitter of 8 steps or more mostly breaks validity, so those rows sit close together.
-The shuffled-loop row shows our compiler (ShapeFix) tolerates edge order inside a loop; Bhavika's may
-not, one more reason to swap hers in early.
+* reward entry point (`tests/test_verl_reward.py`): ground truth is scored through the isolated OCC
+  child, and a sample whose ground-truth cache is missing falls back to its topology reward without
+  stopping the run
+* preflight (`tests/preflight_nova.py`, real Qwen tokenizer): the longest RL prompt is 795 tokens
+  (limit 1,280); the token estimate used for the length limits is 1.032 to 1.049 times the real count,
+  so it never undercounts; ground truth scores 1.0
+* oracle eval (`scripts/eval.py --oracle`, the ground-truth sequence as the model output, 255 test
+  shapes): invalid ratio 0.000, IoU 1.000, IoU_best 1.000, CD x1e3 median 0.067 (the sampling floor),
+  reward 1.000
+
+Reward sanity (`scripts/reward_sanity.py`, 80 random chunk-9 shapes):
+
+| Variant | n | Reward | ± | Valid solid | IoU | Topology |
+|---|---|---|---|---|---|---|
+| ground truth | 80 | 1.000 | 0.000 | 1.00 | 1.000 | 1.000 |
+| vertices jittered ±2 grid steps | 80 | 0.974 | 0.093 | 0.97 | 0.958 | 1.000 |
+| jittered ±8 steps | 80 | 0.516 | 0.327 | 0.34 | 0.320 | 1.000 |
+| jittered ±32 steps | 80 | 0.506 | 0.325 | 0.36 | 0.323 | 1.000 |
+| jittered ±128 steps | 80 | 0.418 | 0.265 | 0.30 | 0.218 | 1.000 |
+| another model's ground truth | 80 | 0.321 | 0.031 | 1.00 | 0.078 | 1.000 |
+| a simple box instead | 79 | 0.320 | 0.031 | 1.00 | 0.015 | 1.000 |
+| one face deleted (invalid, close) | 80 | 0.385 | 0.071 | 0.01 | 0.012 | 0.934 |
+| edge order shuffled inside loops | 80 | 0.996 | 0.009 | 1.00 | 0.994 | 0.938 |
+| truncated | 80 | 0.000 | 0.000 | 0.00 | 0.000 | 0.000 |
+| empty | 80 | 0.000 | 0.000 | 0.00 | 0.000 | 0.000 |
+
+879 reward calls, 57 ms per call on one core. The simple-box row has n = 79 because the one sample that
+is itself the box is skipped.
+
+A valid but wrong shape (0.32) does not beat a near miss (0.385), so the policy is not pushed toward
+"emit any valid box". Jitter of 8 steps or more breaks validity for most shapes, so those rows sit close
+together. The shuffled-loop row shows that our compiler (ShapeFix) tolerates edge order inside a loop;
+Bhavika's compiler may not, which is one more reason to swap it in early.
+
+Also checked on CPU before run01: every verl override composes against verl v0.9.1's config tree
+(`tests/check_verl_configs.py`), and the reward entry point survives verl's by-value transfer into a
+separate process.
+
+Not run yet: SFT (run02), the GRPO smoke test (run03), the 8k GRPO stage (run04) and the SFT eval (run05)
+are queued on Nova. run03 is a 6-step GRPO run that checks one full step before the main run.
 
 ## Running it on Nova
 
@@ -126,7 +159,10 @@ When Bhavika's checkpoint arrives: `POLICY=/path/to/her/hf EXP=grpo_8k_bh sbatch
 2. **16k stage:** `STAGE=16k POLICY=<8k export> EXP=grpo_16k sbatch scripts/run04_grpo_8k.sbatch`.
 3. **Image-to-sequence** once renders arrive: an `images` column and `<image>` in the prompt; verl's
    dataset handles the rest.
-4. **Bhavika's compiler:** set `BREP_COMPILER_MODULE`, rerun run01 to rebuild the GT cache.
+4. **Bhavika's compiler:** her reconstruction repository (github.com/bhavikab04/BRepVLM) has been shared
+   and is not yet integrated. Set `BREP_COMPILER_MODULE`, then rerun run01 to rebuild the GT cache.
+5. **Base model:** Bhavika suggested InternVL3-8B as the starting model until her checkpoint is ready.
+   The first run uses Qwen2.5-VL-3B, and verl support for InternVL3 has not been checked yet.
 
 ## Troubleshooting
 
@@ -149,7 +185,7 @@ brepgrpo/     seqfmt (parse), checks (topology), compiler_occ + compiler (OCC), 
 scripts/      prepare_data, reward_sanity, eval, compare, unpack_raw, setup_nova, submit_chain,
               _common.sh + _sft.sh/_grpo.sh/_eval.sh launchers, run01..run06 sbatch
 tests/        test_core (pytest), test_verl_reward, check_verl_configs, preflight_nova
-docs/         GRPO_RUNBOOK_2026-10.md, prof_meeting_prep/
+docs/         GRPO_RUNBOOK_2026-10.md
 DATA_REPORT.md  what is in the data and what we ask Bhavika for
 figures/      pipeline figure (figures/make_pipeline_figure.py)
 ```

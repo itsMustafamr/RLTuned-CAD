@@ -12,8 +12,9 @@ Everything below was measured on that chunk with the code in this repo
 | Text annotations | `Text_Annotations_chunk9/abc_0009_step_v00.tar.gz` (3.6 MB) | 5,995 model folders, 3 descriptions each: `construction_steps`, `global_shape`, `topology_relations` |
 | STEP files | `Step_files_chunk9/abc_0009_step_v00.7z` (1 GB) | the original ABC STEP files (not needed for training) |
 
-Not received yet: the BRep compiler / reconstruction code, the metadata JSONs behind the
-annotations, image renders for image-to-sequence, and the SFT checkpoint.
+Bhavika has shared her reconstruction repository (github.com/bhavikab04/BRepVLM); it is not yet
+integrated here, so the reward uses our stand-in compiler. Not received yet: the metadata JSONs behind
+the annotations, image renders for image-to-sequence, and the SFT checkpoint.
 
 ## 2. How the 10,000 raw models became 4,477 sequences
 
@@ -95,7 +96,8 @@ and the area share of each surface type. They do not pin down everything (for ex
 positions), so one text can fit several shapes. This is why the RL reward also scores face/edge/vertex
 counts and surface-type mix, not only overlap with one ground-truth shape.
 
-* 4,375 of 4,477 sequences have annotations (102 do not).
+* 4,375 of 4,477 sequences have all three descriptions; 102 have none (79 simple, 23 complex), and no
+  sequence has only some of them. The 102 are dropped, since text-to-sequence training requires a prompt.
 * 1,620 annotation folders have no sequence (models filtered out by the v3 generator).
 
 ## 7. Duplicates
@@ -119,8 +121,10 @@ straddle train and test.
 
 ## 9. Asks for Bhavika
 
-1. **Compiler / reconstruction code.** Until then we use our stand-in. Hers plugs in through
-   `BREP_COMPILER_MODULE` (`brepgrpo/compiler.py`); the reward stays comparable.
+1. **Reconstruction code.** Her repository (github.com/bhavikab04/BRepVLM) is shared but not yet
+   integrated, so the reward uses our stand-in compiler until then. Hers will plug in through
+   `BREP_COMPILER_MODULE` (`brepgrpo/compiler.py`), and the GT cache will be rebuilt with it so the
+   reward stays comparable.
 2. **SFT checkpoint details:** base model and size, the exact prompt template, and whether the target
    includes the `# ...` comment lines and the `quantization(...)` header. We train on the body only,
    which saves about 200 tokens per sample.
@@ -135,3 +139,5 @@ straddle train and test.
    SFT training and our RL test set.
 6. **More data:** one chunk gives about 3.9k unique usable shapes. If the first RL numbers look good,
    3 to 5 more chunks would be the next step.
+7. **Missing annotations:** 102 of the 4,477 sequences (79 simple, 23 complex) have no text annotation.
+   Do annotations exist for them, or were they skipped on purpose?
