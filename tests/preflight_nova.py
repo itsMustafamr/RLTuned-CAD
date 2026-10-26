@@ -66,8 +66,12 @@ def main():
     sc = [vr.compute_score("x", strip_to_body(open(r["seq_path"]).read()), json.dumps(dict(id=r["id"], cache=r["gt_cache"])), {})["score"] for r in rows]
     print(f"[3] reward on GT: {[round(s, 3) for s in sc]} -> {'OK' if min(sc) > 0.99 else 'CHECK'}")
 
-    # the estimate must not undercount, or sequences slip past the 8k / 16k length filters
-    from scripts.prepare_data import est_tokens
+    # the estimate must not undercount, or sequences slip past the 8k / 16k length filters.
+    # Loaded by file path: verl's editable install puts its own `scripts` package on sys.path, which shadows ours.
+    spec = importlib.util.spec_from_file_location("prepare_data", os.path.join(REPO, "scripts", "prepare_data.py"))
+    prep = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(prep)
+    est_tokens = prep.est_tokens
     rows = [json.loads(l) for l in open(os.path.join(a.data, "manifest.jsonl"))][:300]
     ratio = []
     for r in rows:
