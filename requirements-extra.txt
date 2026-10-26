@@ -1,7 +1,8 @@
 # Installed on top of verl v0.9.1's locked env by scripts/setup_nova.sh (uv sync --extra fsdp --extra vllm
-# already brings torch 2.11 / vLLM 0.24 / transformers 5.9 / numpy / scipy / pandas).
+# already brings torch 2.11 / vLLM 0.24 / transformers 5.9 / numpy / pandas, but not scipy).
 cadquery-ocp==8.0.1.1.0   # OpenCascade (OCCT 8) python bindings: the BRep compiler, meshing, mass properties
 pebble>=5.0               # child process with a hard timeout around OCC in the reward
+scipy                     # cKDTree for the Chamfer distances (brepgrpo/geometry.py, metrics_eval.py)
 regex                     # Qwen pre-tokenizer split for token-length estimates in prepare_data.py
 pyarrow                   # parquet
 # CPU-only dev env for the tests (no verl):  uv venv -p 3.12 && uv pip install numpy scipy pandas pytest hydra-core omegaconf -r requirements-extra.txt

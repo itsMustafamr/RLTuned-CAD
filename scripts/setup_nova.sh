@@ -22,7 +22,7 @@
 #      To get flash-attn back later: build it against this torch with a CUDA 13 toolkit
 #      (`uv pip install --python $VERL/.venv/bin/python --no-build-isolation flash-attn==2.8.3`, ~30+ min).
 #   3. adds our few extra deps to that venv (OpenCascade via cadquery-ocp 8.x, pebble,
-#      regex, pyarrow) - requirements-extra.txt
+#      scipy, regex, pyarrow) - requirements-extra.txt
 #   4. import check (CPU only)
 #   5. downloads the base model into $HF_HOME (compute nodes have no internet)
 # Then: bash scripts/unpack_raw.sh data/BRepVLM  and  sbatch scripts/run01_prep.sbatch
@@ -62,7 +62,8 @@ uv pip install --python "$VERL/.venv/bin/python" -r requirements-extra.txt
 
 echo "== 4/5 import check =="
 "$VERL/.venv/bin/python" - <<'PY'
-import torch, vllm, transformers, verl, OCP, pebble, sys
+import torch, vllm, transformers, verl, OCP, pebble, scipy, sys
+import brepgrpo.reward, brepgrpo.geometry, brepgrpo.gtcache   # everything the reward and GT cache import
 print(f"   python {sys.version.split()[0]} | torch {torch.__version__} (cuda {torch.version.cuda}) | vllm {vllm.__version__} | "
       f"transformers {transformers.__version__} | verl {getattr(verl, '__version__', '?')} | OCP ok")
 try:

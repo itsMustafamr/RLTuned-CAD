@@ -94,16 +94,18 @@ def tier_of(n_faces: int, hist: dict) -> int:
 
 
 def _gt_job(args):
+    """(id, rebuilt, error): rebuilt=False with no error = the GT is not a valid solid (expected for ~1%);
+    an error = the job itself broke (missing package, bad file), which must not pass silently."""
     mid, seq_path, out_path = args
     try:
         from brepgrpo.gtcache import build_gt_assets
         a = build_gt_assets(open(seq_path).read())
         if a is None:
-            return mid, False
+            return mid, False, ""
         np.savez_compressed(out_path, **a)
-        return mid, True
-    except Exception:
-        return mid, False
+        return mid, True, ""
+    except Exception as ex:
+        return mid, False, f"{type(ex).__name__}: {ex}"[:300]
 
 
 def main():
@@ -158,13 +160,16 @@ def main():
     # ---- GT assets (parallel)
     jobs = [(m, rows[m]["seq_path"], os.path.join(args.out, "gt_cache", f"{m}.npz")) for m in keep
             if rows[m]["tokens"] <= args.max_tokens]
+    errors = Counter()
     if args.skip_gt:
         ok = {m: os.path.exists(p) for m, _, p in jobs}
     else:
         ok = {}
         with ProcessPoolExecutor(args.workers) as ex:
-            for i, (m, good) in enumerate(ex.map(_gt_job, jobs, chunksize=4)):
+            for i, (m, good, err) in enumerate(ex.map(_gt_job, jobs, chunksize=4)):
                 ok[m] = good
+                if err:
+                    errors[err] += 1
                 if (i + 1) % 500 == 0:
                     print(f"  gt cache {i + 1}/{len(jobs)}")
     for m in keep:
@@ -172,6 +177,11 @@ def main():
         rows[m]["gt_cache"] = os.path.abspath(os.path.join(args.out, "gt_cache", f"{m}.npz"))
     print(f"GT rebuilt into valid solids: {sum(ok.values())}/{len(jobs)} attempted "
           f"({len(keep) - len(jobs)} skipped as longer than {args.max_tokens} tokens)")
+    for err, n in errors.most_common(3):
+        print(f"  GT job failed {n}x: {err}")
+    if jobs and not any(ok.values()):
+        sys.exit("ERROR: no ground truth rebuilt, so there is nothing for the reward to compare against "
+                 "(see the errors above; a missing package in the venv is the usual cause)")
 
     # ---- split (stratified by category)
     rng = random.Random(args.seed)

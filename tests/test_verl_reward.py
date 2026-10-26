@@ -16,6 +16,7 @@ def main():
     spec.loader.exec_module(vr)
     rows = [json.loads(l) for l in open(args.manifest)]
     rows = [r for r in rows if r["gt_ok"]][:5]
+    assert rows, "no shape with a rebuilt GT in the manifest: the GT cache step of prepare_data.py failed"
     t = time.time()
     for r in rows:
         gt = json.dumps(dict(id=r["id"], cache=r["gt_cache"]))

@@ -16,10 +16,16 @@ EPOCHS=${EPOCHS:-2}; SAVE=${SAVE:-15}; TEST=${TEST:-15}; STEPS=${STEPS:-null}
 if [ "${SMOKE:-0}" = "1" ]; then RESP=2048; BATCH=8; TOKGPU=8192; EPOCHS=1; SAVE=6; TEST=3; STEPS=6; fi
 N=${N:-8}                                                 # rollouts per prompt (ReCAD: 8)
 
-# CPU budget: verl's placement group takes 3 CPUs per GPU and the driver takes 1; the rest can be reward
-# workers (Ray actors, 1 CPU each). Ray must be told the Slurm core count explicitly.
-REWARD_WORKERS=${REWARD_WORKERS:-$(( NCPUS - 3 * NGPUS - 2 ))}
-[ "$REWARD_WORKERS" -ge 2 ] || REWARD_WORKERS=2
+# CPU budget (verl v0.9.1, one node): the training placement group holds 3 CPUs per GPU and TransferQueue
+# holds 9 (8 storage units + its controller). The remote reward manager starts reward.num_workers reward
+# loop workers and each of them starts reward.num_workers scoring actors of 1 CPU, so the run needs
+# num_workers^2 free CPUs; a scoring actor that does not fit never starts and the step waits on it forever.
+# 48 CPUs + 8 GPUs -> 15 free -> 3 (9 scoring actors). Ray must be told the Slurm core count explicitly.
+FREE_CPUS=$(( NCPUS - 3 * NGPUS - 9 ))
+if [ -z "${REWARD_WORKERS:-}" ]; then
+  REWARD_WORKERS=1
+  while [ $(( (REWARD_WORKERS + 1) * (REWARD_WORKERS + 1) )) -le "$FREE_CPUS" ]; do REWARD_WORKERS=$(( REWARD_WORKERS + 1 )); done
+fi
 export BREP_REWARD_TIMEOUT=${BREP_REWARD_TIMEOUT:-60}
 
 echo "[grpo] policy=$POLICY stage=$STAGE resp=$RESP batch=$BATCH n=$N steps=$STEPS reward_workers=$REWARD_WORKERS exp=$EXP"

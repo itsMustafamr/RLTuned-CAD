@@ -130,9 +130,10 @@ When Bhavika's checkpoint arrives: `POLICY=/path/to/her/hf EXP=grpo_8k_bh sbatch
 
 ## Troubleshooting
 
-* GRPO never prints a step and Ray warns about pending actors: the reward workers did not get CPUs.
-  `_grpo.sh` sizes them as `cores - 3 x GPUs - 2` (verl reserves 3 CPUs per GPU); request the full node
-  (`--cpus-per-task=48` on the 8-GPU nodes) or lower `REWARD_WORKERS`.
+* GRPO never prints a step and Ray warns about pending actors: the reward scoring actors did not get CPUs.
+  With the `remote` reward manager verl starts `reward.num_workers` squared of them (1 CPU each), after
+  3 CPUs per GPU for training and 9 for TransferQueue. `_grpo.sh` picks the largest `REWARD_WORKERS` whose
+  square fits (3 on 48 cores + 8 GPUs); request the full node (`--cpus-per-task=48`) or lower `REWARD_WORKERS`.
 * SFT stops with an `input_ids mismatch` message from verl's dataset check: append
   `data.ignore_input_ids_mismatch=True` to the sbatch call.
 * vLLM out of memory in GRPO: `TP=2` or `GPU_UTIL=0.5`, or `BATCH=32`.

@@ -25,7 +25,7 @@ def overrides_from(script, marker, env):
 
 
 env = dict(DATA="/d", TRAIN="/d/sft_train.parquet", BATCH="64", RESP="8192", TOKGPU="20480", POLICY="/m", BASE_MODEL="/m",
-           LR="1e-6", EPOCHS="2", SAVE="15", TEST="15", STEPS="null", N="8", REWARD_WORKERS="22", NCPUS="48", REPO="/r",
+           LR="1e-6", EPOCHS="2", SAVE="15", TEST="15", STEPS="null", N="8", REWARD_WORKERS="3", NCPUS="48", REPO="/r",
            CKPT="/c", EXP="x", SFT_EXP="s", STAGE="8k", NGPUS="8", LOGGER="[console,tensorboard]",
            REMOVE_PADDING="False", ATTN_IMPL="sdpa")
 for script, marker, name in (("_sft.sh", "-m verl.trainer.sft_trainer", "sft_trainer_engine"),
@@ -36,7 +36,7 @@ for script, marker, name in (("_sft.sh", "-m verl.trainer.sft_trainer", "sft_tra
     print(f"{script}: {len(ovs)} overrides compose cleanly against verl ({name})")
     if name == "ppo_trainer":
         assert cfg.reward.custom_reward_function.name == "compute_score"
-        assert cfg.reward.reward_manager.name == "remote" and cfg.reward.num_workers == 22
+        assert cfg.reward.reward_manager.name == "remote" and cfg.reward.num_workers == 3
         assert cfg.actor_rollout_ref.rollout.n == 8 and cfg.data.shuffle is False
         assert cfg.ray_kwargs.ray_init.num_cpus == 48
         assert cfg.actor_rollout_ref.model.override_config.attn_implementation == "sdpa"
