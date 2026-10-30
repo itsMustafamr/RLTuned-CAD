@@ -5,30 +5,39 @@
 #   SMOKE    1 -> 6 steps, 2k-token answers, batch 8: checks the plumbing only
 #   EXP      run name under $CKPT and runs/
 #   N BATCH LR KL TP GPU_UTIL  (defaults 8, 64, 1e-6, 0.001, 1, 0.6)
+#   GPU_UTIL is vLLM's share of each GPU, and vLLM counts the colocated training process's memory
+#   against it: 0.6 leaves room for the answer cache on 4-8 GPUs; a 1-GPU test with
+#   actor_rollout_ref.actor.fsdp_config.optimizer_offload=True needs 0.5 (0.3 left 1 GiB for the cache).
+#   TQ_UNITS TransferQueue storage units (default: one per GPU; each holds 1 CPU)
 # Extra Hydra overrides can be appended as arguments.
 STAGE=${STAGE:-8k}
 POLICY=${POLICY:-$(latest_hf "$CKPT/$SFT_EXP")}
 EXP=${EXP:-grpo_${STAGE}}
 [ -n "$POLICY" ] || { echo "ERROR: no POLICY (run02 not finished, or set POLICY=/path/to/hf)"; exit 1; }
 
+PROMPT=1280                                               # data.max_prompt_length (longest RL prompt: 795 tokens)
 if [ "$STAGE" = "16k" ]; then RESP=16384; BATCH=${BATCH:-32}; TOKGPU=36864; else RESP=8192; BATCH=${BATCH:-64}; TOKGPU=20480; fi
 EPOCHS=${EPOCHS:-2}; SAVE=${SAVE:-15}; TEST=${TEST:-15}; STEPS=${STEPS:-null}
 if [ "${SMOKE:-0}" = "1" ]; then RESP=2048; BATCH=8; TOKGPU=8192; EPOCHS=1; SAVE=6; TEST=3; STEPS=6; fi
 N=${N:-8}                                                 # rollouts per prompt (ReCAD: 8)
 
 # CPU budget (verl v0.9.1, one node): the training placement group holds 3 CPUs per GPU and TransferQueue
-# holds 9 (8 storage units + its controller). The remote reward manager starts reward.num_workers reward
-# loop workers and each of them starts reward.num_workers scoring actors of 1 CPU, so the run needs
-# num_workers^2 free CPUs; a scoring actor that does not fit never starts and the step waits on it forever.
-# 48 CPUs + 8 GPUs -> 15 free -> 3 (9 scoring actors). Ray must be told the Slurm core count explicitly.
-FREE_CPUS=$(( NCPUS - 3 * NGPUS - 9 ))
+# holds TQ_UNITS storage units + its controller, 1 CPU each (verl's default is 8 units, which alone needs
+# 9 CPUs). The remote reward manager starts reward.num_workers reward loop workers and each of them starts
+# reward.num_workers scoring actors of 1 CPU, so the run needs num_workers^2 free CPUs; an actor that does
+# not fit never starts and the step waits on it forever. Ray must be told the Slurm core count explicitly.
+#   48 CPUs + 8 GPUs: 48 - 24 - 9 = 15 free -> 3 (9 scoring actors)
+#   32 CPUs + 4 GPUs: 32 - 12 - 5 = 15 free -> 3
+#    8 CPUs + 1 GPU :  8 -  3 - 2 =  3 free -> 1   (Nova desktop test, 2026-10-30)
+TQ_UNITS=${TQ_UNITS:-$NGPUS}
+FREE_CPUS=$(( NCPUS - 3 * NGPUS - TQ_UNITS - 1 ))
 if [ -z "${REWARD_WORKERS:-}" ]; then
   REWARD_WORKERS=1
   while [ $(( (REWARD_WORKERS + 1) * (REWARD_WORKERS + 1) )) -le "$FREE_CPUS" ]; do REWARD_WORKERS=$(( REWARD_WORKERS + 1 )); done
 fi
 export BREP_REWARD_TIMEOUT=${BREP_REWARD_TIMEOUT:-60}
 
-echo "[grpo] policy=$POLICY stage=$STAGE resp=$RESP batch=$BATCH n=$N steps=$STEPS reward_workers=$REWARD_WORKERS exp=$EXP"
+echo "[grpo] policy=$POLICY stage=$STAGE resp=$RESP batch=$BATCH n=$N steps=$STEPS reward_workers=$REWARD_WORKERS tq_units=$TQ_UNITS exp=$EXP"
 
 python -m verl.trainer.main_ppo \
   algorithm.adv_estimator=grpo \
@@ -36,7 +45,7 @@ python -m verl.trainer.main_ppo \
   data.train_files="$DATA/rl_train_${STAGE}.parquet" \
   data.val_files="$DATA/rl_val.parquet" \
   data.train_batch_size="$BATCH" \
-  data.max_prompt_length=1280 \
+  data.max_prompt_length="$PROMPT" \
   data.max_response_length="$RESP" \
   data.filter_overlong_prompts=True \
   data.truncation=error \
@@ -65,6 +74,7 @@ python -m verl.trainer.main_ppo \
   actor_rollout_ref.rollout.temperature=1.0 \
   actor_rollout_ref.rollout.tensor_model_parallel_size="${TP:-1}" \
   actor_rollout_ref.rollout.gpu_memory_utilization="${GPU_UTIL:-0.6}" \
+  actor_rollout_ref.rollout.max_model_len=$(( PROMPT + RESP )) \
   actor_rollout_ref.rollout.enforce_eager=False \
   actor_rollout_ref.rollout.free_cache_engine=True \
   actor_rollout_ref.rollout.log_prob_use_dynamic_bsz="$DYNAMIC_BSZ" \
@@ -81,6 +91,7 @@ python -m verl.trainer.main_ppo \
   reward.reward_manager.name=remote \
   reward.num_workers="$REWARD_WORKERS" \
   ray_kwargs.ray_init.num_cpus="$NCPUS" \
+  transfer_queue.backend.SimpleStorage.num_data_storage_units="$TQ_UNITS" \
   trainer.balance_batch=True \
   trainer.val_before_train=True \
   trainer.logger="$LOGGER" \

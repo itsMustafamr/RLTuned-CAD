@@ -41,8 +41,8 @@ N_PRED_SURF = 20000
 N_QUERY = 5000
 MAX_BAD_LINE_FRAC = 0.3
 
-FIELDS = ("score", "complete", "parsed", "s_topo", "s_wire", "valid_solid", "iou", "cd", "s_cd", "s_geo",
-          "s_struct", "n_faces", "compile_ms", "timeout")
+FIELDS = ("score", "complete", "parsed", "s_topo", "refs_ok", "wires_closed", "manifold", "s_wire", "valid_solid",
+          "iou", "cd", "s_cd", "s_geo", "s_struct", "n_faces", "compile_ms", "timeout")
 
 
 def _empty() -> Dict[str, float]:
@@ -65,6 +65,9 @@ def cheap_part(text: str):
     out["parsed"] = 1.0
     t = topology_scores(seq)
     out["s_topo"] = t["s_topo"]
+    # logged separately: s_topo hides which check fails (2026-10-30 test: loops rarely close, outer loops always ok)
+    for k in ("refs_ok", "wires_closed", "manifold"):
+        out[k] = t[k]
     out["score"] = W["base"] + W["topo"] * t["s_topo"]
     return seq, out, seq_text
 

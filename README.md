@@ -98,8 +98,9 @@ is itself the box is skipped.
 
 A valid but wrong shape (0.32) does not beat a near miss (0.385), so the policy is not pushed toward
 "emit any valid box". Jitter of 8 steps or more breaks validity for most shapes, so those rows sit close
-together. The shuffled-loop row shows that our compiler (ShapeFix) tolerates edge order inside a loop;
-Bhavika's compiler may not, which is one more reason to swap it in early.
+together. The shuffled-loop row shows that our compiler (ShapeFix) tolerates edge order inside a loop.
+The BRepVLM draft's Algorithm 2 shows Bhavika's compiler does the same (greedy endpoint chaining, then
+ShapeFix_Wire), so with either compiler the solid tier ignores loop order; only the topology check sees it.
 
 Also checked on CPU before run01: every verl override composes against verl v0.9.1's config tree
 (`tests/check_verl_configs.py`), and the reward entry point survives verl's by-value transfer into a
@@ -107,6 +108,25 @@ separate process.
 
 Not run yet: SFT (run02), the GRPO smoke test (run03), the 8k GRPO stage (run04) and the SFT eval (run05)
 are queued on Nova. run03 is a 6-step GRPO run that checks one full step before the main run.
+
+### GPU pipeline test (one A100, Nova desktop, 2026-10-29/30)
+
+Every GPU stage ran once on a small chunk-9 subset (`scripts/make_small_subset.py`: 200 train shapes / 800 SFT
+rows, 64 RL prompts, all tier 0-1). These numbers check the pipeline; they are not results. Logs:
+`logs/*desktop*.log`, `results/small_sft`, `results/small_grpo`.
+
+| Stage | What ran | Outcome |
+|---|---|---|
+| SFT | Qwen2.5-VL-3B, 1 epoch, 12 steps, Adam state on CPU | train loss 0.522 -> 0.255, val loss 0.263, 16 min |
+| Eval (SFT) | 255 test shapes, greedy, 4,096-token answers | invalid 0.973, complete 0.655, topology pass 0.000, reward 0.080 |
+| GRPO smoke | 6 steps x 8 prompts x 8 answers, 2,048-token answers | 6 steps + checkpoint + HF export; reward timeout 0; vLLM vs training token-probability correlation 0.9996 |
+| Eval (after GRPO) | same 255 shapes | invalid 0.992, complete 0.925, reward 0.097 |
+
+The SFT model writes the format with the right face / edge / vertex counts, but its loops do not close and
+its edges are not shared between faces, so almost nothing builds. Six GRPO steps raised completion (answers
+that end with `end_model()`) and lowered validity, consistent with finishing being the cheapest part of the
+reward to collect from this weak start. To watch for that in the real run, `refs_ok`, `wires_closed` and
+`manifold` are now logged next to `s_topo`.
 
 ## Running it on Nova
 
@@ -136,6 +156,16 @@ Every `.sbatch` is a plain bash script, so inside a Nova Desktop session with GP
 `GPUS=4 bash scripts/submit_chain.sh train` targets the 4-GPU A100 nodes. The runbook with the
 verification gate for each stage is `docs/GRPO_RUNBOOK_2026-10.md`.
 
+One-GPU pipeline test without the queue (Nova desktop, 1 A100, 8 cores, about an hour):
+
+```bash
+python scripts/make_small_subset.py
+export DATA=$PWD/data/processed_small SFT_EXP=sft_small_test EPOCHS=1
+bash -c 'source scripts/_common.sh && source scripts/_sft.sh engine.optimizer_offload=True'
+bash -c 'source scripts/_common.sh && NAME=small_sft MODEL=$(latest_hf "$CKPT/sft_small_test") MAXTOK=4096 TEST=$PWD/data/processed/test.jsonl && source scripts/_eval.sh'
+bash -c 'source scripts/_common.sh && SMOKE=1 EXP=grpo_small_test GPU_UTIL=0.5 POLICY=$(latest_hf "$CKPT/sft_small_test") && source scripts/_grpo.sh actor_rollout_ref.actor.fsdp_config.optimizer_offload=True'
+```
+
 When Bhavika's checkpoint arrives: `POLICY=/path/to/her/hf EXP=grpo_8k_bh sbatch scripts/run04_grpo_8k.sbatch`
 (skip our SFT). Match `brepgrpo/prompts.py` to her prompt format first.
 
@@ -148,7 +178,10 @@ When Bhavika's checkpoint arrives: `POLICY=/path/to/her/hf EXP=grpo_8k_bh sbatch
 | `STAGE` | `8k` | `16k` adds the long (complex) shapes; start it from the 8k run's export |
 | `N`, `BATCH`, `LR`, `KL` | 8, 64, 1e-6, 0.001 | rollouts per prompt, prompts per step, actor LR, KL coefficient |
 | `STEPS` | all (2 epochs) | `trainer.total_training_steps`, e.g. `STEPS=30` for a fixed budget |
-| `TP`, `GPU_UTIL` | 1, 0.6 | vLLM tensor parallel size and memory share |
+| `TP`, `GPU_UTIL` | 1, 0.6 | vLLM tensor parallel size and memory share (vLLM counts the colocated trainer against it; 0.5 for the 1-GPU test) |
+| `TQ_UNITS` | number of GPUs | TransferQueue storage units, 1 CPU each (verl's default of 8 needs 9 CPUs) |
+| `SFT_SAVE` | `after_each_epoch` | SFT checkpoint interval; an integer N also saves every N steps (use ~50 in scavenger) |
+| `TEMPERATURE`, `MAXTOK` | 0.0, 16384 | eval sampling temperature and answer length |
 | `BREP_COMPILER_MODULE` | (ours) | module or .py exposing `compile_sequence(text) -> TopoDS_Shape` (Bhavika's) |
 
 ## Next steps
@@ -166,10 +199,23 @@ When Bhavika's checkpoint arrives: `POLICY=/path/to/her/hf EXP=grpo_8k_bh sbatch
 
 ## Troubleshooting
 
-* GRPO never prints a step and Ray warns about pending actors: the reward scoring actors did not get CPUs.
-  With the `remote` reward manager verl starts `reward.num_workers` squared of them (1 CPU each), after
-  3 CPUs per GPU for training and 9 for TransferQueue. `_grpo.sh` picks the largest `REWARD_WORKERS` whose
-  square fits (3 on 48 cores + 8 GPUs); request the full node (`--cpus-per-task=48`) or lower `REWARD_WORKERS`.
+* GRPO never prints a step and Ray warns about pending actors: some actor did not get a CPU. verl holds
+  3 CPUs per GPU for training and `TQ_UNITS` + 1 for TransferQueue, and the `remote` reward manager starts
+  `reward.num_workers` squared scoring actors (1 CPU each). `_grpo.sh` picks the largest `REWARD_WORKERS`
+  that fits (3 on 48 cores + 8 GPUs, 1 on an 8-core desktop); request more cores or lower `TQ_UNITS`.
+* `AttributeError: 'BaseModelOutputWithPooling' object has no attribute 'mean'` on the first forward pass:
+  verl v0.9.1's text-only vision dummy with transformers 5.x. `scripts/setup_nova.sh` patches it (one line,
+  as on verl main); rerun setup on an older checkout.
+* vLLM `To serve at least one request with the model's max seq len (128000)`: `max_model_len` was unset, so
+  vLLM sized for the model's 128k limit. `_grpo.sh` now sets it to prompt + answer length. If it still lacks
+  cache memory, raise `GPU_UTIL`: vLLM counts the colocated training process against its share.
+* eval `argument --temperature: invalid float value: '/tmp'`: an older `_eval.sh` read `TEMP`, which Nova
+  sets to the temp directory; the variable is `TEMPERATURE` now.
+* `DataLoader worker ... killed by signal: Killed` after the last GRPO step: seen once at shutdown, after the
+  checkpoint and final validation were written. Check `sacct -j <job> -o MaxRSS,ReqMem` if it appears mid-run.
+* `prompt_length/clip_ratio` or `response_length/clip_ratio` above 0 with lengths below the limit: verl
+  compares each length to the longest one in the batch, not to the configured limit; truncation is real only
+  when `response_length/max` equals `RESP`. `perf/cpu_memory_used_gb` is the whole node's memory, not the job's.
 * SFT stops with an `input_ids mismatch` message from verl's dataset check: append
   `data.ignore_input_ids_mismatch=True` to the sbatch call.
 * vLLM out of memory in GRPO: `TP=2` or `GPU_UTIL=0.5`, or `BATCH=32`.

@@ -108,6 +108,7 @@ sentence.
 ## Known limits to state up front
 
 * Stand-in compiler and stand-in SFT: both get replaced by Bhavika's (`BREP_COMPILER_MODULE`, `POLICY=`).
-* Our compiler tolerates edge order inside loops (ShapeFix); hers may not. Swap early.
+* Both compilers tolerate edge order inside loops (ours via ShapeFix, hers via endpoint chaining +
+  ShapeFix_Wire per the draft's Algorithm 2), so the solid tier of the reward ignores loop order.
 * One chunk: 3,470 training shapes. SFT quality caps what RL can start from.
 * GT guidance (ReCAD / LUFFY) and the 16k stage are not in this run.

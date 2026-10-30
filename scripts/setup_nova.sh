@@ -7,7 +7,7 @@
 #
 # What it does (idempotent, safe to re-run, ~20-30 min, mostly downloads):
 #   1. installs uv if missing
-#   2. clones verl v0.9.1 as a SIBLING checkout (kept pristine):
+#   2. clones verl v0.9.1 as a SIBLING checkout (pristine apart from one upstream bug fix, see below):
 #        /work/mech-ai-scratch/mohd7/verl
 #      and builds its LOCKED env there with `uv sync --extra fsdp --extra vllm`, which is
 #      verl's own documented combo: torch 2.11.0+cu130, vLLM 0.24.0, transformers 5.9.0,
@@ -56,6 +56,16 @@ if [ -x "$VERL/.venv/bin/python" ] && ! "$VERL/.venv/bin/python" -c 'import sys;
     rm -rf "$VERL/.venv"
 fi
 (cd "$VERL" && uv sync --frozen --python 3.12 --extra fsdp --extra vllm --no-install-package flash-attn)
+
+# verl v0.9.1 bug, fixed on verl main: on text-only batches qwen2_vl.py runs a dummy image through the
+# vision tower and calls .mean() on the result, which transformers 5.x returns as a BaseModelOutputWithPooling,
+# not a tensor (AttributeError on the first SFT or GRPO forward pass). Unpack it the way the image branch two
+# blocks above already does. Idempotent; the check fails setup if verl's code has moved.
+QWEN2VL="$VERL/verl/models/transformers/qwen2_vl.py"
+sed -i 's/^        image_embeds = model\.visual(pixel_values, grid_thw=image_grid_thw)$/        image_embeds, _ = unpack_visual_output(model.visual(pixel_values, grid_thw=image_grid_thw))/' "$QWEN2VL"
+[ "$(grep -c 'image_embeds, _ = unpack_visual_output(model.visual(pixel_values, grid_thw=image_grid_thw))' "$QWEN2VL")" = 2 ] \
+    || { echo "ERROR: verl qwen2_vl.py text-only patch did not apply"; exit 1; }
+echo "   patched $QWEN2VL (text-only vision dummy, as on verl main)"
 
 echo "== 3/5 our extras into the same venv =="
 uv pip install --python "$VERL/.venv/bin/python" -r requirements-extra.txt

@@ -1,5 +1,7 @@
 # Stand-in SFT (text -> BRep sequence) with verl's FSDP SFT trainer. Called by scripts/run02_sft_*.sbatch
-# after scripts/_common.sh. Reads: BASE_MODEL, SFT_EXP, EPOCHS (2), LR (1e-5), TRAIN (sft_train.parquet).
+# after scripts/_common.sh. Reads: BASE_MODEL, SFT_EXP, EPOCHS (2), LR (1e-5), TRAIN (sft_train.parquet),
+# SFT_SAVE (after_each_epoch; an integer N also saves every N steps, e.g. 50 in the scavenger partition,
+# where a job can be killed at any time and resubmitting resumes from the newest checkpoint).
 # Extra Hydra overrides can be appended as arguments.
 EPOCHS=${EPOCHS:-2}
 LR=${LR:-1e-5}
@@ -31,7 +33,7 @@ torchrun --standalone --nnodes=1 --nproc-per-node="$NGPUS" -m verl.trainer.sft_t
   optim.min_lr_ratio=0.1 \
   optim.clip_grad=1.0 \
   trainer.total_epochs="$EPOCHS" \
-  trainer.save_freq=after_each_epoch \
+  trainer.save_freq="${SFT_SAVE:-after_each_epoch}" \
   trainer.test_freq=100 \
   trainer.logger="$LOGGER" \
   trainer.project_name=rltuned-cad \
