@@ -26,7 +26,7 @@
 #   STAGE=16k POLICY=$CKPT/grpo_8k/global_step_<last>/actor/huggingface EXP=grpo_16k sbatch ...
 # Gate before run06: reward mean and valid_solid rising over the first 30 steps; timeout ~0.
 set -euo pipefail
-cd /work/mech-ai-scratch/mohd7/RLTuned-CAD
+cd "${REPO:-/work/mech-ai-scratch/mohd7/RLTuned-CAD}"
 source scripts/_common.sh
 export STAGE=${STAGE:-8k} EXP=${EXP:-grpo_8k}
 source scripts/_grpo.sh "$@"

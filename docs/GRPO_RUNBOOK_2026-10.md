@@ -1,8 +1,9 @@
 # RLTuned-CAD: first GRPO run on Nova (runbook, 2026-10)
 
 **Goal:** one honest "SFT only vs SFT + GRPO" comparison on chunk 9 with our stand-in compiler and
-reward, plus the evidence that every piece of the pipeline does what it claims. Qwen2.5-VL-3B is the
-first-result setting; 7B is the paper setting and only changes `BASE_MODEL`.
+reward, plus the evidence that every piece of the pipeline does what it claims. The base model is
+InternVL3-8B-hf (the BRepVLM base, so Bhavika's checkpoint is a drop-in); Qwen2.5-VL-3B-Instruct is the
+small model for pipeline tests and only changes `BASE_MODEL`.
 
 **Nova root:** `/work/mech-ai-scratch/mohd7/RLTuned-CAD` · verl lives in the sibling checkout
 `/work/mech-ai-scratch/mohd7/verl` with its own `.venv` (`scripts/setup_nova.sh`) · every job logs to
@@ -50,14 +51,16 @@ Gate (in the log):
 
 `data/processed/reward_sanity.txt` and `results/oracle/summary.md` are the evidence for this stage.
 
-## Stage 2: stand-in SFT (`run02_sft_3b`, estimate 30-60 min on 8 A100 for 3B)
+## Stage 2: stand-in SFT (`run02_sft`, time not measured yet for 8B; the 3B test did 800 rows in 16 min on one GPU)
 
 ```bash
-sbatch scripts/run02_sft_3b.sbatch            # or: bash scripts/submit_chain.sh train  (chains 2 -> 3 -> 4, and 5)
+sbatch scripts/run02_sft.sbatch               # or: bash scripts/submit_chain.sh train  (chains 2 -> 3 -> 4, and 5)
 ```
 
-Gate: `val/loss` decreases across the 2 epochs; `latest_hf` prints
-`$CKPT/sft_qwen2.5-vl-3b-instruct_c9/global_step_<N>/huggingface`. If the dataset check stops the run with
+Before the first 8B run, clear the model-specific checks once: `python tests/preflight_nova.py --data data/processed
+--model OpenGVLab/InternVL3-8B-hf` (chat template, loss mask, prompt lengths under its template), then the 4-GPU
+small test from the README. Gate: `val/loss` decreases across the 2 epochs; `latest_hf` prints
+`$CKPT/sft_internvl3-8b-hf_c9/global_step_<N>/huggingface`; the launch line shows `wrap=[Qwen2DecoderLayer,InternVLVisionLayer]`. If the dataset check stops the run with
 `input_ids mismatch`, resubmit with `data.ignore_input_ids_mismatch=True` appended.
 
 ## Stage 3: GRPO smoke test (`run03_grpo_smoke`, estimate 20-30 min)
@@ -86,7 +89,7 @@ not collapse to the maximum (that would mean the policy learned to ramble; raise
 ```bash
 sbatch scripts/run05_eval_sft.sbatch          # as soon as run02 is done
 sbatch scripts/run06_eval_grpo.sbatch         # newest run04 export; MODEL=... NAME=... for a specific step
-python scripts/compare.py sft_3b grpo_8k      # -> results/comparison.md
+python scripts/compare.py sft_internvl3-8b-hf grpo_8k   # -> results/comparison.md
 ```
 
 Gate: `results/<name>/summary.md` has n = 255 in the `all` row for both; the comparison table has both rows.
@@ -107,7 +110,8 @@ sentence.
 
 ## Known limits to state up front
 
-* Stand-in compiler and stand-in SFT: both get replaced by Bhavika's (`BREP_COMPILER_MODULE`, `POLICY=`).
+* Stand-in compiler and stand-in SFT: both get replaced by Bhavika's (`BREP_COMPILER_MODULE`, `POLICY=`); same
+  base model as hers, so the swap changes nothing else.
 * Both compilers tolerate edge order inside loops (ours via ShapeFix, hers via endpoint chaining +
   ShapeFix_Wire per the draft's Algorithm 2), so the solid tier of the reward ignores loop order.
 * One chunk: 3,470 training shapes. SFT quality caps what RL can start from.

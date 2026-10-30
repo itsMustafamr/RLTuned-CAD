@@ -23,7 +23,7 @@
 #   * no "switching", "ProcessExpired" or Ray scheduling warnings about CPUs
 #   * $CKPT/grpo_smoke/global_step_6/actor/huggingface exists
 set -euo pipefail
-cd /work/mech-ai-scratch/mohd7/RLTuned-CAD
+cd "${REPO:-/work/mech-ai-scratch/mohd7/RLTuned-CAD}"
 source scripts/_common.sh
 export SMOKE=1 EXP=grpo_smoke
 source scripts/_grpo.sh "$@"

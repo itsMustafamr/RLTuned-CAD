@@ -31,7 +31,7 @@
 # Gate before run02: "GT rebuilt into valid solids" ~98.7% of attempted, gt reward 1.000,
 # preflight prints four OK lines, oracle IoU 1.000.
 set -euo pipefail
-cd /work/mech-ai-scratch/mohd7/RLTuned-CAD
+cd "${REPO:-/work/mech-ai-scratch/mohd7/RLTuned-CAD}"
 source scripts/_common.sh
 
 echo "================ step 1/5: prepare_data ================"

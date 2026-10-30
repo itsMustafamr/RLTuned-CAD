@@ -58,6 +58,10 @@ def _run_isolated(seq_text, gt_path, partial):
 def compute_score(data_source=None, solution_str="", ground_truth=None, extra_info=None, **kwargs):
     gt = json.loads(ground_truth) if isinstance(ground_truth, str) else dict(ground_truth)
     seq, partial, seq_text = cheap_part(solution_str or "")
+    try:                                        # curriculum tier of the prompt (prepare_data.py), for the training log
+        partial["tier"] = float((extra_info or {}).get("tier", -1))
+    except (TypeError, ValueError, AttributeError):
+        partial["tier"] = -1.0
     if seq is None:                             # truncated / unparseable: reward 0, no OCC needed
         return partial
     if INPROCESS:

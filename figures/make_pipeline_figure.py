@@ -1,6 +1,10 @@
-"""Draft pipeline figure for the BRepVLM RL section.  python figures/make_pipeline_figure.py
+"""Pipeline figure for the BRepVLM RL section.  python figures/make_pipeline_figure.py
 Writes figures/pipeline_concept.svg (editable in Illustrator / Inkscape / PowerPoint) and, if
-playwright is installed, figures/pipeline_concept.png. Shape renders come from figures/assets/."""
+playwright is installed, figures/pipeline_concept.png. Shape renders come from figures/assets/.
+
+Panel (a) shows chunk-9 model 00094357 (lines from its .seq.txt, spaces compressed, and its annotation). Panel (b)'s
+rollouts and advantage bars are schematic. Panels (c) and (d) are measured values from run01
+(logs/run01_prep_*.log, 2026-10-26); update them when the data or the reward changes."""
 import base64
 import os
 
@@ -50,7 +54,7 @@ rect(0, 0, W, H, "#ffffff", rx=0)
 rect(20, 20, 470, 370, "#EAF3FB", "#85B7EB", 1.5, 16)
 text(40, 52, "(a) Data: ABC models as B-rep code + text", 17, "#0C447C", 700)
 rect(40, 72, 150, 38, "#ffffff", "#378ADD", 1.2, 8)
-text(115, 96, "ABC STEP file", 13, "#0C447C", 600, "middle")
+text(115, 96, "ABC 00094357 (STEP)", 13, "#0C447C", 600, "middle")
 arrow([(115, 110), (115, 124)])
 image(40, 120, 150, 150, "target.png")
 rect(40, 276, 150, 50, "#ffffff", "#378ADD", 1.2, 8)
@@ -65,7 +69,7 @@ code = [("model(3)", "#C9D1D9"),
         ("f8 = cylinder(8,", "#7EE787"),
         ("  axis_org=[585,585,2047],", "#7EE787"),
         ("  axis_dir=[2047,2047,4094], r=585)", "#7EE787"),
-        ("wire(9, face=8, edges=[1,-6,-3,5])", "#FFA657"),
+        ("wire(0,face=8,r=0,edges=[-1,2,3,-4])", "#FFA657"),
         ("e0 = circle(0, r=585, sweep=0,", "#D2A8FF"),
         ("  center=[585,585,3509], v=[0,1])", "#D2A8FF"),
         ("end_model()", "#C9D1D9")]
@@ -89,7 +93,7 @@ arrow([(690, 135), (708, 135)])
 # policy
 rect(710, 95, 150, 80, "#534AB7", rx=12)
 text(785, 128, "BRepVLM  πθ", 16, "#ffffff", 700, "middle")
-text(785, 150, "Qwen2.5-VL, SFT init", 12, "#E5E2FF", 400, "middle")
+text(785, 150, "InternVL3-8B, SFT init", 12, "#E5E2FF", 400, "middle")
 arrow([(860, 135), (888, 135)])
 # rollouts
 rect(890, 72, 160, 126, "#ffffff", "#7F77DD", 1.2, 10)
@@ -106,17 +110,17 @@ text(1145, 149, "OpenCascade, ShapeFix", 11, "#D4F2E7", 400, "middle")
 arrow([(1220, 135), (1248, 135)])
 # solids + rewards
 rect(1250, 72, 310, 126, "#ffffff", "#7F77DD", 1.2, 10)
-cards = [("roll_good.png", "0.97", "#1D9E75", "valid"), ("roll_rough.png", "0.62", "#BA7517", "valid"),
-         ("roll_wrong.png", "0.33", "#5F5E5A", "valid"), ("roll_broken.png", "0.21", "#D85A30", "invalid")]
-for i, (f, r, c, v) in enumerate(cards):
+cards = [("roll_good.png", "matches", "#1D9E75", "valid solid"), ("roll_rough.png", "close", "#BA7517", "valid solid"),
+         ("roll_wrong.png", "wrong shape", "#5F5E5A", "valid solid"), ("roll_broken.png", "no solid", "#D85A30", "invalid")]
+for i, (f, r, c, v) in enumerate(cards):   # schematic: the reward ladder in (c) gives the actual values
     x = 1258 + i * 75
     image(x, 74, 72, 72, f)
-    text(x + 36, 162, f"r = {r}", 13, c, 700, "middle")
+    text(x + 36, 162, r, 11.5, c, 700, "middle")
     text(x + 36, 180, v, 11, c, 600, "middle")
 arrow([(1405, 198), (1405, 228)])
 # advantages
 rect(1250, 230, 310, 145, "#ffffff", "#7F77DD", 1.2, 10)
-text(1405, 252, "group-relative advantage", 13, "#3C3489", 700, "middle")
+text(1405, 252, "group-relative advantage (schematic)", 13, "#3C3489", 700, "middle")
 text(1405, 270, "Aᵢ = (rᵢ − mean r) / std r", 12, "#534AB7", 400, "middle", italic=True)
 base = 322
 out.append(f'<line x1="1270" y1="{base}" x2="1545" y2="{base}" stroke="#AFA9EC" stroke-width="1"/>')
@@ -161,10 +165,10 @@ for i, (t1, t2, fill, tc, w) in enumerate(rungs):
     rect(40, y, w, 64, fill, rx=10)
     text(56, y + 27, t1, 14, tc, 700)
     text(56, y + 48, t2, 12.5, tc, 400)
-text(470, 470, "Sanity check on 80 shapes", 13, "#085041", 700)
-bars = [("ground truth", 1.000, "#0F6E56"), ("jitter ±2 steps", 0.967, "#1D9E75"), ("jitter ±8", 0.505, "#5DCAA5"),
-        ("jitter ±128", 0.406, "#9FE1CB"), ("face deleted", 0.372, "#EF9F27"), ("simple box", 0.337, "#888780"),
-        ("other model", 0.322, "#B4B2A9"), ("truncated", 0.0, "#D85A30")]
+text(470, 470, "Sanity check, 80 shapes (run01)", 13, "#085041", 700)
+bars = [("ground truth", 1.000, "#0F6E56"), ("jitter ±2 steps", 0.974, "#1D9E75"), ("jitter ±8", 0.516, "#5DCAA5"),
+        ("jitter ±128", 0.418, "#9FE1CB"), ("face deleted", 0.385, "#EF9F27"), ("other model", 0.321, "#B4B2A9"),
+        ("simple box", 0.320, "#888780"), ("truncated", 0.0, "#D85A30")]
 for i, (lab, v, c) in enumerate(bars):
     y = 486 + i * 33
     text(470, y + 17, lab, 12, "#04342C", 500)
@@ -184,16 +188,17 @@ for n, c, lab in segs:
     text(x + w / 2, 487, lab if w > 110 else lab.split(" (")[0], 12, "#ffffff", 700, "middle")
     text(x + w / 2, 520, f"{n}", 12, "#633806", 600, "middle")
     x += w
+text(1190, 452, "prompts by tier, 16k stage", 11.5, "#633806", 400, "middle", italic=True)
 out.append('<path d="M820,532 L820,540 L1462,540 L1462,532" fill="none" stroke="#633806" stroke-width="1.4"/>')
 text(1141, 558, "stage 1: answers up to 8k tokens (2,877 prompts)", 12.5, "#633806", 600, "middle")
 out.append('<path d="M820,566 L820,574 L1560,574 L1560,566" fill="none" stroke="#633806" stroke-width="1.4"/>')
 text(1190, 592, "stage 2: up to 16k tokens (3,318 prompts)", 12.5, "#633806", 600, "middle")
-fun = [("ABC models in chunk 9", 10000), ("v3 sequences", 4477), ("unique shapes", 3956), ("GT rebuilds into a valid solid", 3713),
-       ("RL prompts (8k stage)", 2877)]
+fun = [("ABC models in chunk 9", 10000), ("v3 sequences", 4477), ("unique shapes", 3956), ("with text annotations", 3856),
+       ("GT rebuilds into a valid solid", 3686), ("RL prompts (8k stage)", 2877)]
 for i, (lab, n) in enumerate(fun):
-    y = 612 + i * 32
+    y = 608 + i * 28
     w = 460 * n / 10000
-    rect(1060, y, w, 24, ["#FAC775", "#EF9F27", "#BA7517", "#854F0B", "#633806"][i], rx=5)
+    rect(1060, y, w, 24, ["#FAC775", "#EF9F27", "#D08B1E", "#BA7517", "#854F0B", "#633806"][i], rx=5)
     text(1050, y + 17, lab, 12, "#412402", 500, "end")
     text(1066 + w, y + 17, f"{n:,}", 12, "#412402", 700)
 

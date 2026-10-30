@@ -4,8 +4,9 @@ import os
 import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-COLS = [("invalid_ratio", "IR (lower)"), ("iou_mean", "IoU"), ("iou_best_mean", "IoU_best"), ("cd_median_x1e3", "CD med x1e3"),
-        ("cd_mean_x1e3", "CD mean x1e3"), ("reward_mean", "reward")]
+COLS = [("invalid_ratio", "IR (lower)"), ("iou_mean", "IoU"), ("iou_best_mean", "IoU_best"), ("cd_median_x1e3", "CD-Faces med x1e3"),
+        ("cd_mean_x1e3", "CD-Faces mean x1e3"), ("cd_vert_median_x1e3", "CD-Vert med x1e3"), ("cd_edge_median_x1e3", "CD-Edges med x1e3"),
+        ("reward_mean", "reward")]
 
 names = sys.argv[1:]
 lines = []

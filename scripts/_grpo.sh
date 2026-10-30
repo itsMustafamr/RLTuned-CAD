@@ -37,7 +37,12 @@ if [ -z "${REWARD_WORKERS:-}" ]; then
 fi
 export BREP_REWARD_TIMEOUT=${BREP_REWARD_TIMEOUT:-60}
 
-echo "[grpo] policy=$POLICY stage=$STAGE resp=$RESP batch=$BATCH n=$N steps=$STEPS reward_workers=$REWARD_WORKERS tq_units=$TQ_UNITS exp=$EXP"
+WRAP=$(fsdp_wrap_layers "$POLICY")                  # InternVL: explicit FSDP2 layer list for actor and ref (see _common.sh)
+WRAP_ARGS=()                                        # expanded as ${WRAP_ARGS[@]+"${WRAP_ARGS[@]}"}: nothing when empty, also under set -u
+[ -n "$WRAP" ] && WRAP_ARGS=("+actor_rollout_ref.actor.fsdp_config.wrap_policy.transformer_layer_cls_to_wrap=$WRAP"
+                             "+actor_rollout_ref.ref.fsdp_config.wrap_policy.transformer_layer_cls_to_wrap=$WRAP")
+
+echo "[grpo] policy=$POLICY stage=$STAGE resp=$RESP batch=$BATCH n=$N steps=$STEPS reward_workers=$REWARD_WORKERS tq_units=$TQ_UNITS exp=$EXP wrap=${WRAP:-default}"
 
 python -m verl.trainer.main_ppo \
   algorithm.adv_estimator=grpo \
@@ -106,6 +111,6 @@ python -m verl.trainer.main_ppo \
   trainer.total_epochs="$EPOCHS" \
   trainer.total_training_steps="$STEPS" \
   trainer.max_actor_ckpt_to_keep=3 \
-  "$@"
+  ${WRAP_ARGS[@]+"${WRAP_ARGS[@]}"} "$@"
 
 echo "[grpo] done. HF export: $(latest_hf "$CKPT/$EXP")"

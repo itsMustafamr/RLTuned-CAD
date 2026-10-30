@@ -1,6 +1,6 @@
 """Pre-flight on Nova (CPU is enough, ~1-2 min). Catches env/data problems before GPU hours.
 
-  python tests/preflight_nova.py --data data/processed --model Qwen/Qwen2.5-VL-3B-Instruct
+  python tests/preflight_nova.py --data data/processed --model OpenGVLab/InternVL3-8B-hf
 
 1. verl's own SFT dataset tokenizes our parquet with the real chat template, loss only on the answer
 2. RL prompts fit data.max_prompt_length (1280)
@@ -20,7 +20,7 @@ sys.path.insert(0, REPO)
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", default=os.path.join(REPO, "data", "processed"))
-    ap.add_argument("--model", default=os.environ.get("BASE_MODEL", "Qwen/Qwen2.5-VL-3B-Instruct"))
+    ap.add_argument("--model", default=os.environ.get("BASE_MODEL", "OpenGVLab/InternVL3-8B-hf"))
     ap.add_argument("--n", type=int, default=16)
     a = ap.parse_args()
 

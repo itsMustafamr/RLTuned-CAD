@@ -6,7 +6,7 @@ MODEL=${MODEL:?set MODEL}
 TEST=${TEST:-$DATA/test.jsonl}
 N=${N:-1}; TEMPERATURE=${TEMPERATURE:-0.0}; MAXTOK=${MAXTOK:-16384}
 WORKERS=$(( NCPUS / NGPUS > 2 ? NCPUS / NGPUS - 1 : 1 ))
-echo "[eval] name=$NAME model=$MODEL test=$TEST n=$N temp=$TEMPERATURE gpus=$NGPUS"
+echo "[eval] name=$NAME model=$MODEL test=$TEST n=$N temp=$TEMPERATURE max_tokens=$MAXTOK gpus=$NGPUS"
 
 for i in $(seq 0 $((NGPUS - 1))); do
   CUDA_VISIBLE_DEVICES=$i python scripts/eval.py --model "$MODEL" --name "$NAME" --test "$TEST" --n "$N" \

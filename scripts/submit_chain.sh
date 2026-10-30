@@ -15,7 +15,7 @@ stage="${1:-}"
 
 train() {  # $1 = optional dependency job id
   local dep=${1:+--dependency=afterok:$1}
-  j2=$(sbatch --parsable $dep --gres=gpu:a100:$G scripts/run02_sft_3b.sbatch)
+  j2=$(sbatch --parsable $dep --gres=gpu:a100:$G scripts/run02_sft.sbatch)
   j3=$(sbatch --parsable --dependency=afterok:$j2 --gres=gpu:a100:$G scripts/run03_grpo_smoke.sbatch)
   j4=$(sbatch --parsable --dependency=afterok:$j3 --gres=gpu:a100:$G scripts/run04_grpo_8k.sbatch)
   j5=$(sbatch --parsable --dependency=afterok:$j2 scripts/run05_eval_sft.sbatch)

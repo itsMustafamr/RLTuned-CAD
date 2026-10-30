@@ -1,5 +1,6 @@
-# Shared settings for every Nova job. Sourced by scripts/run*.sbatch and the _sft/_grpo/_eval launchers.
-# Edit the paths here once; everything else reads them.
+# Shared settings for every job. Sourced by scripts/run*.sbatch and the _sft/_grpo/_eval launchers.
+# Every path is an environment variable with a Nova default, so the same scripts run on another machine
+# (an AWS instance, say) by exporting REPO, VERL, CKPT and HF_HOME first; see "Running outside Slurm" in the README.
 
 export REPO=${REPO:-/work/mech-ai-scratch/mohd7/RLTuned-CAD}
 export VERL=${VERL:-/work/mech-ai-scratch/mohd7/verl}        # verl v0.9.1 sibling checkout + its .venv (scripts/setup_nova.sh)
@@ -7,9 +8,13 @@ export RAW=${RAW:-$REPO/data/raw}                             # unpacked chunks 
 export DATA=${DATA:-$REPO/data/processed}                     # output of scripts/prepare_data.py
 export CKPT=${CKPT:-/work/mech-ai-scratch/mohd7/ckpt/rltuned-cad}
 export HF_HOME=${HF_HOME:-/work/mech-ai-scratch/mohd7/.cache/huggingface}
-export BASE_MODEL=${BASE_MODEL:-Qwen/Qwen2.5-VL-3B-Instruct}  # SFT starting point; 7B is the paper setting
+# SFT starting point. InternVL3-8B is the BRepVLM base model (Bhavika's SFT starts from it), in the native
+# transformers layout (-hf) that verl trains directly. Qwen/Qwen2.5-VL-3B-Instruct is the small model for
+# pipeline tests; nothing reported comes from it.
+export BASE_MODEL=${BASE_MODEL:-OpenGVLab/InternVL3-8B-hf}
 MODEL_TAG=$(basename "$BASE_MODEL" | tr '[:upper:]' '[:lower:]')
-export SFT_EXP=${SFT_EXP:-sft_${MODEL_TAG}_c9}                 # e.g. sft_qwen2.5-vl-3b-instruct_c9
+export MODEL_TAG
+export SFT_EXP=${SFT_EXP:-sft_${MODEL_TAG}_c9}                 # e.g. sft_internvl3-8b-hf_c9
 
 cd "$REPO"
 source ~/.bashrc >/dev/null 2>&1 || true
@@ -46,6 +51,17 @@ latest_hf() {
   local d
   d=$(ls -d "$1"/global_step_* 2>/dev/null | sort -V | tail -1)
   if [ -d "$d/actor/huggingface" ]; then echo "$d/actor/huggingface"; elif [ -d "$d/huggingface" ]; then echo "$d/huggingface"; fi
+}
+
+# verl's FSDP2 wrapper shards a model at the layer classes the model lists in `_no_split_modules`
+# (verl/utils/fsdp_utils.py, apply_fsdp2) and stops if the list is empty. transformers' native InternVL
+# class lists none, so for InternVL checkpoints the layers are named explicitly: the Qwen2 decoder layers of
+# its language model and the vision encoder layers. Prints nothing for other models (Qwen2.5-VL has its own
+# list), and the launchers then pass no override. $1 = HF model id or a local checkpoint directory.
+fsdp_wrap_layers() {
+  local probe="$1"
+  [ -f "$1/config.json" ] && probe=$(cat "$1/config.json")
+  case "${probe,,}" in *internvl*) echo "[Qwen2DecoderLayer,InternVLVisionLayer]" ;; esac
 }
 
 echo "[common] host=$(hostname) gpus=$NGPUS cpus=$NCPUS model=$BASE_MODEL sft_exp=$SFT_EXP attn=$ATTN_IMPL remove_padding=$REMOVE_PADDING dynamic_bsz=$DYNAMIC_BSZ"

@@ -24,8 +24,13 @@
 #   3. adds our few extra deps to that venv (OpenCascade via cadquery-ocp 8.x, pebble,
 #      scipy, regex, pyarrow) - requirements-extra.txt
 #   4. import check (CPU only)
-#   5. downloads the base model into $HF_HOME (compute nodes have no internet)
+#   5. downloads the base model into $HF_HOME (compute nodes have no internet); re-run with
+#      BASE_MODEL=... to fetch another one into the same cache
 # Then: bash scripts/unpack_raw.sh data/BRepVLM  and  sbatch scripts/run01_prep.sbatch
+#
+# Other machines (an AWS instance, say): export REPO, VERL, HF_HOME and UV_CACHE_DIR to paths that
+# exist there before running; the only hardware requirement is an NVIDIA driver that supports CUDA 13
+# (R580 or newer), which the check below reports.
 set -euo pipefail
 
 REPO=${REPO:-/work/mech-ai-scratch/mohd7/RLTuned-CAD}
@@ -33,10 +38,21 @@ VERL=${VERL:-/work/mech-ai-scratch/mohd7/verl}
 export HF_HOME=${HF_HOME:-/work/mech-ai-scratch/mohd7/.cache/huggingface}
 export UV_CACHE_DIR=${UV_CACHE_DIR:-/work/mech-ai-scratch/mohd7/.cache/uv}
 export UV_PYTHON_INSTALL_DIR=${UV_PYTHON_INSTALL_DIR:-/work/mech-ai-scratch/mohd7/.cache/uv-python}   # if uv has to download a Python 3.12, keep it off the home quota
-BASE_MODEL=${BASE_MODEL:-Qwen/Qwen2.5-VL-3B-Instruct}
+BASE_MODEL=${BASE_MODEL:-OpenGVLab/InternVL3-8B-hf}
 cd "$REPO"
 source ~/.bashrc >/dev/null 2>&1 || true
 export PATH=$HOME/local/bin:$HOME/.local/bin:$PATH
+
+echo "== 0/5 NVIDIA driver =="
+# torch 2.11+cu130 from verl's lock needs a CUDA 13 driver (R580+). Nova's A100 nodes have 580.x.
+DRV=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1 || true)
+if [ -z "$DRV" ]; then
+    echo "   no GPU visible here (fine on a login node); check 'nvidia-smi' on the compute node reports driver >= 580"
+elif [ "${DRV%%.*}" -lt 580 ]; then
+    echo "   WARNING: driver $DRV is older than R580; the cu130 wheels will not load. Use a machine image with a newer driver."
+else
+    echo "   driver $DRV (CUDA 13 capable)"
+fi
 
 echo "== 1/5 uv =="
 if ! command -v uv >/dev/null 2>&1; then

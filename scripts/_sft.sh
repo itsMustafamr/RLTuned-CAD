@@ -1,4 +1,4 @@
-# Stand-in SFT (text -> BRep sequence) with verl's FSDP SFT trainer. Called by scripts/run02_sft_*.sbatch
+# Stand-in SFT (text -> BRep sequence) with verl's FSDP SFT trainer. Called by scripts/run02_sft.sbatch
 # after scripts/_common.sh. Reads: BASE_MODEL, SFT_EXP, EPOCHS (2), LR (1e-5), TRAIN (sft_train.parquet),
 # SFT_SAVE (after_each_epoch; an integer N also saves every N steps, e.g. 50 in the scavenger partition,
 # where a job can be killed at any time and resubmitting resumes from the newest checkpoint).
@@ -6,7 +6,10 @@
 EPOCHS=${EPOCHS:-2}
 LR=${LR:-1e-5}
 TRAIN=${TRAIN:-$DATA/sft_train.parquet}
-echo "[sft] model=$BASE_MODEL exp=$SFT_EXP epochs=$EPOCHS lr=$LR gpus=$NGPUS train=$TRAIN"
+WRAP=$(fsdp_wrap_layers "$BASE_MODEL")             # InternVL: explicit FSDP2 layer list (see _common.sh); else empty
+WRAP_ARGS=()                                        # expanded as ${WRAP_ARGS[@]+"${WRAP_ARGS[@]}"}: nothing when empty, also under set -u
+[ -n "$WRAP" ] && WRAP_ARGS=("+engine.wrap_policy.transformer_layer_cls_to_wrap=$WRAP")
+echo "[sft] model=$BASE_MODEL exp=$SFT_EXP epochs=$EPOCHS lr=$LR gpus=$NGPUS train=$TRAIN wrap=${WRAP:-default}"
 
 torchrun --standalone --nnodes=1 --nproc-per-node="$NGPUS" -m verl.trainer.sft_trainer \
   data.train_files="$TRAIN" \
@@ -44,6 +47,6 @@ torchrun --standalone --nnodes=1 --nproc-per-node="$NGPUS" -m verl.trainer.sft_t
   trainer.resume_mode=auto \
   trainer.max_ckpt_to_keep=2 \
   checkpoint.save_contents=[model,optimizer,extra,hf_model] \
-  "$@"
+  ${WRAP_ARGS[@]+"${WRAP_ARGS[@]}"} "$@"
 
 echo "[sft] done. HF export: $(latest_hf "$CKPT/$SFT_EXP")"

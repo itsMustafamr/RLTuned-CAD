@@ -8,7 +8,7 @@ Everything below was measured on that chunk with the code in this repo
 
 | Item | File | Content |
 |---|---|---|
-| Sequences | `Sequences_chunk9/seq_12bit_chunk9.tar.gz` (27 MB) | 4,477 `.seq.txt` files, v3 protocol, 12-bit, split into `simple/` (3,802) and `complex/` (675), plus per-chunk normalization and quantization diagnostics |
+| Sequences | `Sequences_chunk9/seq_12bit_chunk9.tar.gz` (27 MB) | 4,477 `.seq.txt` files, v3 protocol, 12-bit, split into `simple/` (3,802) and `complex/` (675), plus per-chunk normalization (`norm.json`: per-model scale and center, for scoring against the original STEP) and quantization diagnostics |
 | Text annotations | `Text_Annotations_chunk9/abc_0009_step_v00.tar.gz` (3.6 MB) | 5,995 model folders, 3 descriptions each: `construction_steps`, `global_shape`, `topology_relations` |
 | STEP files | `Step_files_chunk9/abc_0009_step_v00.7z` (1 GB) | the original ABC STEP files (not needed for training) |
 
@@ -70,8 +70,9 @@ Token counts with the Qwen tokenizer rules (every digit is its own token), a sli
 | complex | 10.0k | 16.0k | 29% | 91% |
 | all | 2.7k | 9.0k | 87% | 98% |
 
-One "simple" model (`00094035`) is 2.8 MB / 2.5M tokens and is dropped; in total 120 shapes are longer
-than the 15k-token budget and are left out of SFT and RL. RL runs a short-answer stage (8k) first and a
+One "simple" model (`00094035`) is 2.8 MB / 2.5M tokens and is removed before `prepare_data.py` runs, which is
+why run01 reports 4,476 sequences; in total 120 further shapes are longer than the 15k-token budget and are left
+out of SFT and RL. RL runs a short-answer stage (8k) first and a
 long-answer stage (16k) second, which is also our curriculum.
 
 ## 5. Ground-truth quality checks (all pass)
@@ -103,8 +104,9 @@ counts and surface-type mix, not only overlap with one ground-truth shape.
 ## 7. Duplicates
 
 Only 3,956 of the 4,477 sequences are unique: 153 groups of exact duplicates cover 674 models (the
-largest group has 21 copies). We keep one representative per shape and never let a duplicate group
-straddle train and test.
+largest group has 21 copies), so 521 files are copies of another file (520 among the 4,476 that
+`prepare_data.py` sees). We keep one representative per shape, so a duplicate group cannot straddle
+train and test.
 
 ## 8. What the pipeline uses
 

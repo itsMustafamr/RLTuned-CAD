@@ -6,8 +6,8 @@ with OpenCascade, a verifiable geometric reward scores it, and GRPO updates the 
 
 ![pipeline](figures/pipeline_concept.png)
 
-*Concept figure. The example rollouts and the reward values drawn in it are illustrative, not measured;
-the measured values are in the tables below.*
+*Panel (a) is chunk-9 model 00094357. Panel (b)'s rollouts and advantage bars are schematic. Panels (c) and (d)
+are measured (run01, `logs/run01_prep_*.log`); the same numbers are in the tables below.*
 
 ## Headline results
 
@@ -17,8 +17,12 @@ every row (`scripts/eval.py`). Filled in from `results/comparison.md` as runs fi
 | Model | IR (invalid ratio) | IoU 128^3 | IoU_best | CD x1e3 (median) | reward |
 |---|---|---|---|---|---|
 | oracle (GT sequence as the answer) | 0.000 | 1.000 | 1.000 | 0.067 (sampling floor) | 1.000 |
-| SFT only (Qwen2.5-VL-3B, chunk 9) | queued on Nova (run02, then run05) | | | | |
-| SFT + GRPO 8k stage | queued on Nova (run04, then run06) | | | | |
+| SFT only (InternVL3-8B-hf, chunk 9, our stand-in SFT) | run02 then run05: not run yet | | | | |
+| SFT + GRPO 8k stage | run04 then run06: not run yet | | | | |
+
+The base model is InternVL3-8B (`OpenGVLab/InternVL3-8B-hf`), the model Bhavika's SFT starts from, so her checkpoint
+replaces our stand-in SFT without any other change (`POLICY=`). Qwen2.5-VL-3B-Instruct is only the small model for
+pipeline tests; nothing reported comes from it.
 
 ## How the RL stage works
 
@@ -109,17 +113,18 @@ separate process.
 Not run yet: SFT (run02), the GRPO smoke test (run03), the 8k GRPO stage (run04) and the SFT eval (run05)
 are queued on Nova. run03 is a 6-step GRPO run that checks one full step before the main run.
 
-### GPU pipeline test (one A100, Nova desktop, 2026-10-29/30)
+### GPU pipeline test (one A100, Nova desktop, 2026-10-29/30, Qwen2.5-VL-3B as the test model)
 
 Every GPU stage ran once on a small chunk-9 subset (`scripts/make_small_subset.py`: 200 train shapes / 800 SFT
-rows, 64 RL prompts, all tier 0-1). These numbers check the pipeline; they are not results. Logs:
-`logs/*desktop*.log`, `results/small_sft`, `results/small_grpo`.
+rows, 64 RL prompts, all tier 0-1) with the small model. These numbers check the pipeline; they are not results.
+Logs: `logs/*desktop*.log`, `results/small_sft`, `results/small_grpo`. The same test with InternVL3-8B-hf has not
+run yet (it needs 4 GPUs, see "Running it on Nova").
 
 | Stage | What ran | Outcome |
 |---|---|---|
 | SFT | Qwen2.5-VL-3B, 1 epoch, 12 steps, Adam state on CPU | train loss 0.522 -> 0.255, val loss 0.263, 16 min |
 | Eval (SFT) | 255 test shapes, greedy, 4,096-token answers | invalid 0.973, complete 0.655, topology pass 0.000, reward 0.080 |
-| GRPO smoke | 6 steps x 8 prompts x 8 answers, 2,048-token answers | 6 steps + checkpoint + HF export; reward timeout 0; vLLM vs training token-probability correlation 0.9996 |
+| GRPO smoke | 6 steps x 8 prompts x 8 answers, 2,048-token answers | 6 steps + checkpoint + HF export; reward timeout 0; vLLM and trainer log-probs agree (per-token probability difference mean 0.002, perplexity ratio 1.0002 to 1.0004, KL 2e-4 to 5e-4 over the 6 steps) |
 | Eval (after GRPO) | same 255 shapes | invalid 0.992, complete 0.925, reward 0.097 |
 
 The SFT model writes the format with the right face / edge / vertex counts, but its loops do not close and
@@ -135,7 +140,7 @@ Conventions as in VISTA-CAD: `scripts/runNN_name.sbatch` with the explanation in
 
 ```bash
 cd /work/mech-ai-scratch/mohd7 && git clone <repo url> RLTuned-CAD && cd RLTuned-CAD
-bash scripts/setup_nova.sh                 # once, ~20-30 min, needs internet (OnDemand desktop / login node)
+bash scripts/setup_nova.sh                 # once, ~20-30 min, needs internet (OnDemand desktop / login node); downloads InternVL3-8B-hf
 # copy Bhavika's BRepVLM folder (the two .tar.gz are enough) into data/BRepVLM, then
 bash scripts/unpack_raw.sh data/BRepVLM
 bash scripts/submit_chain.sh all           # run01 -> run02 -> run03 -> run04, run05 after run02
@@ -145,7 +150,7 @@ bash scripts/submit_chain.sh eval          # run06 on the newest GRPO export -> 
 | Script | GPUs | What |
 |---|---|---|
 | `run01_prep.sbatch` | 0 | data prep, GT reward cache, reward sanity, preflight, oracle eval |
-| `run02_sft_3b.sbatch` | 8 | stand-in SFT, Qwen2.5-VL-3B, 2 epochs (`BASE_MODEL=...7B-Instruct` for the paper setting) |
+| `run02_sft.sbatch` | 8 | stand-in SFT, InternVL3-8B-hf, 2 epochs (`BASE_MODEL=Qwen/Qwen2.5-VL-3B-Instruct` for a pipeline test) |
 | `run03_grpo_smoke.sbatch` | 8 | 6 GRPO steps, short answers: proves one full step runs |
 | `run04_grpo_8k.sbatch` | 8 | the main GRPO run (stop it any time; run06 takes the newest export) |
 | `run05_eval_sft.sbatch` | 4 | SFT-only row |
@@ -156,24 +161,34 @@ Every `.sbatch` is a plain bash script, so inside a Nova Desktop session with GP
 `GPUS=4 bash scripts/submit_chain.sh train` targets the 4-GPU A100 nodes. The runbook with the
 verification gate for each stage is `docs/GRPO_RUNBOOK_2026-10.md`.
 
-One-GPU pipeline test without the queue (Nova desktop, 1 A100, 8 cores, about an hour):
+One-GPU pipeline test without the queue (Nova desktop, 1 A100, 8 cores, about an hour, small model):
 
 ```bash
 python scripts/make_small_subset.py
-export DATA=$PWD/data/processed_small SFT_EXP=sft_small_test EPOCHS=1
+export BASE_MODEL=Qwen/Qwen2.5-VL-3B-Instruct DATA=$PWD/data/processed_small SFT_EXP=sft_small_test EPOCHS=1
 bash -c 'source scripts/_common.sh && source scripts/_sft.sh engine.optimizer_offload=True'
 bash -c 'source scripts/_common.sh && NAME=small_sft MODEL=$(latest_hf "$CKPT/sft_small_test") MAXTOK=4096 TEST=$PWD/data/processed/test.jsonl && source scripts/_eval.sh'
 bash -c 'source scripts/_common.sh && SMOKE=1 EXP=grpo_small_test GPU_UTIL=0.5 POLICY=$(latest_hf "$CKPT/sft_small_test") && source scripts/_grpo.sh actor_rollout_ref.actor.fsdp_config.optimizer_offload=True'
 ```
 
+The same test with the real base model needs 4 GPUs (8.4B parameters with Adam state do not fit one card):
+
+```bash
+DATA=$PWD/data/processed_small SFT_EXP=sft_small_internvl EPOCHS=1 sbatch --gres=gpu:a100:4 --cpus-per-task=32 scripts/run02_sft.sbatch
+```
+
 When Bhavika's checkpoint arrives: `POLICY=/path/to/her/hf EXP=grpo_8k_bh sbatch scripts/run04_grpo_8k.sbatch`
-(skip our SFT). Match `brepgrpo/prompts.py` to her prompt format first.
+(skip our SFT), and `MODEL=/path/to/her/hf NAME=sft_bhavika sbatch scripts/run05_eval_sft.sbatch` for her SFT-only
+row. Match `brepgrpo/prompts.py` to her prompt format first. Her checkpoint must be in the native transformers
+layout (`InternVLForConditionalGeneration`, as in `OpenGVLab/InternVL3-8B-hf`); the original InternVL layout
+(`InternVLChatModel`, remote code) generates in vLLM but its `forward` requires `pixel_values`, which verl does not
+pass for text prompts, so it would need a weight conversion first.
 
 ### Knobs (environment variables, read by `scripts/_common.sh` and the launchers)
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `BASE_MODEL` | `Qwen/Qwen2.5-VL-3B-Instruct` | SFT starting point (7B is the paper setting) |
+| `BASE_MODEL` | `OpenGVLab/InternVL3-8B-hf` | SFT starting point (the BRepVLM base); `Qwen/Qwen2.5-VL-3B-Instruct` for pipeline tests |
 | `POLICY` | newest SFT export | GRPO starting point |
 | `STAGE` | `8k` | `16k` adds the long (complex) shapes; start it from the 8k run's export |
 | `N`, `BATCH`, `LR`, `KL` | 8, 64, 1e-6, 0.001 | rollouts per prompt, prompts per step, actor LR, KL coefficient |
@@ -194,8 +209,39 @@ When Bhavika's checkpoint arrives: `POLICY=/path/to/her/hf EXP=grpo_8k_bh sbatch
    dataset handles the rest.
 4. **Bhavika's compiler:** her reconstruction repository (github.com/bhavikab04/BRepVLM) has been shared
    and is not yet integrated. Set `BREP_COMPILER_MODULE`, then rerun run01 to rebuild the GT cache.
-5. **Base model:** Bhavika suggested InternVL3-8B as the starting model until her checkpoint is ready.
-   The first run uses Qwen2.5-VL-3B, and verl support for InternVL3 has not been checked yet.
+5. **InternVL3-8B-hf on a GPU.** Verified so far (transformers 5.9.0, vLLM 0.24.0, verl v0.9.1): the native class
+   loads and runs a text-only forward the way verl calls it, vLLM has it in its registry, and the FSDP2 layer list
+   the launchers add for it composes (`tests/check_verl_configs.py`) and names the classes that exist in the model
+   (`Qwen2DecoderLayer`, `InternVLVisionLayer`; the class itself has no `_no_split_modules`, which is why verl
+   needs the list). Not yet run: an SFT step and a GRPO step on a GPU. The 4-GPU small test above is that check:
+   watch the preflight (chat template, loss mask, prompt lengths), memory, and seconds per step.
+
+## Running outside Slurm (an AWS instance)
+
+The scripts do not depend on Slurm: every `.sbatch` is a plain bash script and `scripts/_common.sh` reads every
+path from an environment variable with a Nova default. On a fresh GPU machine:
+
+1. Pick a machine with 8 x 80 GB GPUs (A100 or H100) and an NVIDIA driver of 580 or newer: verl's lock installs
+   torch 2.11 with CUDA 13 wheels, which need an R580+ driver (`scripts/setup_nova.sh` prints the driver and
+   warns). Give it a large disk or volume: roughly 15 GB for the verl env, 16 GB for InternVL3-8B-hf, and on the
+   order of 100 GB per full checkpoint with optimizer state (`max_actor_ckpt_to_keep=3` keeps three).
+2. Put the repo and its sibling verl checkout on that disk and export the paths once per shell:
+   ```bash
+   export REPO=/data/RLTuned-CAD VERL=/data/verl CKPT=/data/ckpt HF_HOME=/data/hf UV_CACHE_DIR=/data/uv
+   cd $REPO && bash scripts/setup_nova.sh && bash scripts/unpack_raw.sh data/BRepVLM
+   ```
+3. Run the stages as bash scripts, in the same order and with the same gates as on Nova:
+   ```bash
+   bash scripts/run01_prep.sbatch
+   bash scripts/run02_sft.sbatch           # uses every GPU nvidia-smi lists
+   bash scripts/run03_grpo_smoke.sbatch && bash scripts/run04_grpo_8k.sbatch
+   bash scripts/run05_eval_sft.sbatch && bash scripts/run06_eval_grpo.sbatch
+   ```
+   Logs still go to `logs/<job>_<id>.log` only under Slurm; outside it, redirect: `bash scripts/run02_sft.sbatch 2>&1 | tee logs/run02_sft_aws.log`.
+4. Copy `results/` and the HF exports off the instance before stopping it (an instance's own disk goes with it).
+
+The CPU budget in `scripts/_grpo.sh` assumes `nproc` cores are all for this job, which is true on a dedicated
+instance; `REWARD_WORKERS` and `TQ_UNITS` can still be set by hand.
 
 ## Troubleshooting
 
@@ -219,6 +265,9 @@ When Bhavika's checkpoint arrives: `POLICY=/path/to/her/hf EXP=grpo_8k_bh sbatch
 * SFT stops with an `input_ids mismatch` message from verl's dataset check: append
   `data.ignore_input_ids_mismatch=True` to the sbatch call.
 * vLLM out of memory in GRPO: `TP=2` or `GPU_UTIL=0.5`, or `BATCH=32`.
+* `apply_fsdp2` fails with `assert len(fsdp_transformer_layer_cls_to_wrap) > 0` or a `NoneType` error on an
+  InternVL checkpoint: the layer list was not passed. The `[sft]` / `[grpo]` launch line prints `wrap=...`;
+  `fsdp_wrap_layers` in `scripts/_common.sh` detects InternVL from the model name or the checkpoint's `config.json`.
 * `[brep reward] ...` lines in the GRPO log: a sample's OCC child crashed or timed out; it kept its
   topology reward and was flagged `timeout=1`. A steady stream of them means the compiler is unhappy with
   what the policy writes, look at `runs/<exp>/val_generations/`.
@@ -227,10 +276,10 @@ When Bhavika's checkpoint arrives: `POLICY=/path/to/her/hf EXP=grpo_8k_bh sbatch
 
 ```
 brepgrpo/     seqfmt (parse), checks (topology), compiler_occ + compiler (OCC), geometry, gtcache,
-              reward, verl_reward (verl entry point), prompts, metrics_eval
+              reward, verl_reward (verl entry point), prompts, metrics_eval (IoU, IoU_best, CD on faces / edges / vertices)
 scripts/      prepare_data, reward_sanity, eval, compare, unpack_raw, setup_nova, submit_chain,
               _common.sh + _sft.sh/_grpo.sh/_eval.sh launchers, run01..run06 sbatch
-tests/        test_core (pytest), test_verl_reward, check_verl_configs, preflight_nova
+tests/        test_core (pytest), test_verl_reward, check_verl_configs (every override + the InternVL wrap list), preflight_nova
 docs/         GRPO_RUNBOOK_2026-10.md
 DATA_REPORT.md  what is in the data and what we ask Bhavika for
 figures/      pipeline figure (figures/make_pipeline_figure.py)

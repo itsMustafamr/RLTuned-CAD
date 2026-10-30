@@ -10,7 +10,9 @@ Sharding (one process per GPU, then merge):
   python scripts/eval.py --name sft --merge --num-shards k
 Outputs: results/<name>/{predictions*.jsonl, summary.json, summary.md}
 Metrics: invalid_ratio (ReCAD IR), iou_mean (128^3, invalid = 0), iou_best_mean (best of 24 axis rotations),
-         CD = mean squared NN distance x 1e3 on 30k points (valid solids only), reward_mean (training reward)
+         CD = mean squared NN distance x 1e3 on 30k surface points (the paper's CD-Faces), cd_vert / cd_edge =
+         plain Chamfer x 1e3 between vertex sets / edge samples (CD-Vert., CD-Edges); every CD column is over
+         valid solids only, so they cover the same shapes. reward_mean is the training reward.
 """
 from __future__ import annotations
 
@@ -48,11 +50,10 @@ def _score(args):
         out = score(text, gt_path)
     except Exception:
         out = _empty()
-    if seq_path:  # paper metrics (denser than the reward); only defined for valid solids
+    if seq_path:  # paper metrics (denser than the reward); IoU / surface CD need a valid solid, vertex / edge CD a parse
         try:
             from brepgrpo.metrics_eval import eval_metrics
-            out.update(eval_metrics(text, seq_path) if out.get("valid_solid") else
-                       dict(iou128=0.0, iou_best=0.0, cd_l2=float("nan"), cd_l2sq=float("nan")))
+            out.update(eval_metrics(text, seq_path))
         except Exception:
             pass
     return out
@@ -103,8 +104,12 @@ def summarize(rows, n):
         has_eval = all("iou128" in s for s in first)
         iou = np.array([s["iou128"] if has_eval else s["iou"] for s in first])
         iou_best = np.array([s.get("iou_best", 0.0) for s in first])
-        cd = np.array([s["cd_l2sq"] if has_eval else s["cd"] for s, v in zip(first, valid) if v])
-        cd = cd[np.isfinite(cd)]
+        def valid_only(key):
+            x = np.array([s.get(key, float("nan")) for s, v in zip(first, valid) if v], dtype=float)
+            return x[np.isfinite(x)]
+
+        cd = valid_only("cd_l2sq" if has_eval else "cd")
+        cd_vert, cd_edge = valid_only("cd_vert"), valid_only("cd_edge")
         d = dict(
             n=len(rs),
             invalid_ratio=float(1 - valid.mean()) if len(valid) else None,
@@ -113,6 +118,8 @@ def summarize(rows, n):
             iou_best_mean=float(iou_best.mean()) if has_eval else None,
             cd_median_x1e3=float(np.median(cd) * 1e3) if len(cd) else None,
             cd_mean_x1e3=float(cd.mean() * 1e3) if len(cd) else None,
+            cd_vert_median_x1e3=float(np.median(cd_vert) * 1e3) if len(cd_vert) else None,
+            cd_edge_median_x1e3=float(np.median(cd_edge) * 1e3) if len(cd_edge) else None,
             reward_mean=float(np.mean([s["score"] for s in first])),
             complete=float(np.mean([s["complete"] for s in first])),
             topology_pass=float(np.mean([s["s_topo"] >= 0.999 for s in first])),
@@ -134,7 +141,7 @@ def summarize(rows, n):
 
 def write_md(summary, path, name):
     cols = ["n", "invalid_ratio", "iou_mean", "iou_best_mean", "iou_mean_valid", "cd_median_x1e3", "cd_mean_x1e3",
-            "reward_mean", "complete", "topology_pass"]
+            "cd_vert_median_x1e3", "cd_edge_median_x1e3", "reward_mean", "complete", "topology_pass"]
     with open(path, "w") as f:
         f.write(f"## {name}\n\n| subset | " + " | ".join(cols) + " |\n|" + "---|" * (len(cols) + 1) + "\n")
         for k, d in summary.items():

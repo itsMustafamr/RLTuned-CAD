@@ -12,14 +12,15 @@
 #SBATCH --error=logs/%x_%j.log
 
 # STEP 6 - the "SFT + GRPO" row: same protocol as run05 on the newest run04 export.
-# Then the side-by-side table:   python scripts/compare.py sft_3b grpo_8k   -> results/comparison.md
+# Then the side-by-side table:   python scripts/compare.py sft_<model> grpo_8k   -> results/comparison.md
 # A specific checkpoint:  MODEL=$CKPT/grpo_8k/global_step_30/actor/huggingface NAME=grpo_8k_s30 sbatch ...
+# SFT_NAME names the SFT row to compare against (default: the run05 row of $BASE_MODEL).
 set -euo pipefail
-cd /work/mech-ai-scratch/mohd7/RLTuned-CAD
+cd "${REPO:-/work/mech-ai-scratch/mohd7/RLTuned-CAD}"
 source scripts/_common.sh
 export RL_EXP=${RL_EXP:-grpo_8k}
 export NAME=${NAME:-$RL_EXP}
 export MODEL=${MODEL:-$(latest_hf "$CKPT/$RL_EXP")}
 source scripts/_eval.sh
-python scripts/compare.py sft_3b "$NAME"
+python scripts/compare.py "${SFT_NAME:-sft_${MODEL_TAG}}" "$NAME"
 echo "### run06 done"

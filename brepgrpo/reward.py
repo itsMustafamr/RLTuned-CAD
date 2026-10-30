@@ -41,13 +41,17 @@ N_PRED_SURF = 20000
 N_QUERY = 5000
 MAX_BAD_LINE_FRAC = 0.3
 
+# Every call returns all of these (verl's reward_extra_info needs the same keys on every sample).
+# `tier` is the prompt's curriculum tier copied from extra_info, so the per-step mean in the training log
+# shows the curriculum order (data.shuffle=False) is in effect; -1 when the caller has no tier.
 FIELDS = ("score", "complete", "parsed", "s_topo", "refs_ok", "wires_closed", "manifold", "s_wire", "valid_solid",
-          "iou", "cd", "s_cd", "s_geo", "s_struct", "n_faces", "compile_ms", "timeout")
+          "iou", "cd", "s_cd", "s_geo", "s_struct", "n_faces", "compile_ms", "timeout", "tier")
 
 
 def _empty() -> Dict[str, float]:
     d = {k: 0.0 for k in FIELDS}
     d["cd"] = 9.99
+    d["tier"] = -1.0
     return d
 
 
@@ -65,8 +69,7 @@ def cheap_part(text: str):
     out["parsed"] = 1.0
     t = topology_scores(seq)
     out["s_topo"] = t["s_topo"]
-    # logged separately: s_topo hides which check fails (2026-10-30 test: loops rarely close, outer loops always ok)
-    for k in ("refs_ok", "wires_closed", "manifold"):
+    for k in ("refs_ok", "wires_closed", "manifold"):   # logged on their own: s_topo alone hides which check fails
         out[k] = t[k]
     out["score"] = W["base"] + W["topo"] * t["s_topo"]
     return seq, out, seq_text
